@@ -38,6 +38,31 @@ cursor · pro · you@example.com
 
 The `│` inside each bar is a **pace marker**: it shows how far the current reset window has elapsed (`pace NN%` is that elapsed fraction). **If the filled bar is to the left of the marker you're ahead of schedule; to the right you're burning faster than time.** For example, codex Weekly at 98% used with 99% elapsed is right on pace, while cursor's Plan at 20.6% used with only 12% elapsed is running a bit hot.
 
+## Quick access (Raycast / launchers)
+
+Install the binary, then run it from a launcher for instant access:
+
+```sh
+go install github.com/kohii/aiquota/cmd/aiquota@latest
+```
+
+For Raycast, drop a Script Command like this into your scripts directory:
+
+```bash
+#!/bin/bash
+# @raycast.schemaVersion 1
+# @raycast.title AI Usage
+# @raycast.mode fullOutput
+# @raycast.packageName aiquota
+# @raycast.icon 📊
+export PATH="$HOME/go/bin:$PATH"
+exec aiquota
+```
+
+Trigger it from Raycast (optionally bind a hotkey) to see usage instantly. The
+output is plain monospace text, so the same wrapper works with Alfred or
+SwiftBar/xbar too.
+
 ## Design
 
 See [docs/design.md](docs/design.md) for the investigation, data sources, and design decisions.
