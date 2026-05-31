@@ -42,9 +42,28 @@ func (p palette) green(s string) string  { return p.wrap("32", s) }
 func (p palette) yellow(s string) string { return p.wrap("33", s) }
 func (p palette) red(s string) string    { return p.wrap("31", s) }
 
-// Render writes all results to w. color enables ANSI styling.
-func Render(w io.Writer, results []Result, color bool) {
-	p := palette{on: color}
+// Options controls how Render styles output.
+type Options struct {
+	// Color emits ANSI styling (used when stdout is a TTY).
+	Color bool
+	// Emoji prefixes each body line with a 🟢/🟡/🔴/⚪ signal so the usage level
+	// reads at a glance where ANSI color isn't rendered — e.g. Raycast's
+	// fullOutput, which shows monospaced plain text but ignores ANSI. In
+	// practice it is used instead of Color, not alongside it.
+	Emoji bool
+}
+
+const (
+	emojiOK      = "🟢"
+	emojiWarn    = "🟡"
+	emojiCrit    = "🔴"
+	emojiNeutral = "⚪"
+	emojiError   = "⚠️"
+)
+
+// Render writes all results to w using opt for styling.
+func Render(w io.Writer, results []Result, opt Options) {
+	p := palette{on: opt.Color}
 	for i, r := range results {
 		if i > 0 {
 			fmt.Fprintln(w)
@@ -59,19 +78,55 @@ func Render(w io.Writer, results []Result, color bool) {
 				if nc.Reason != "" {
 					note += " · " + nc.Reason
 				}
-				fmt.Fprintf(w, "  %s\n", p.dim("– "+note))
+				if opt.Emoji {
+					fmt.Fprintf(w, "%s %s\n", emojiNeutral, note)
+				} else {
+					fmt.Fprintf(w, "  %s\n", p.dim("– "+note))
+				}
 				continue
 			}
-			fmt.Fprintf(w, "  %s %s\n", p.red("⚠"), r.Err.Error())
+			if opt.Emoji {
+				fmt.Fprintf(w, "%s %s\n", emojiError, r.Err.Error())
+			} else {
+				fmt.Fprintf(w, "  %s %s\n", p.red("⚠"), r.Err.Error())
+			}
 			continue
 		}
 		if r.Usage == nil || len(r.Usage.Meters) == 0 {
-			fmt.Fprintf(w, "  %s\n", p.dim("(no usage data)"))
+			if opt.Emoji {
+				fmt.Fprintf(w, "%s (no usage data)\n", emojiNeutral)
+			} else {
+				fmt.Fprintf(w, "  %s\n", p.dim("(no usage data)"))
+			}
 			continue
 		}
 		for _, m := range r.Usage.Meters {
-			fmt.Fprintln(w, "  "+meterLine(p, m))
+			fmt.Fprintln(w, linePrefix(opt, m)+meterLine(p, m))
 		}
+	}
+}
+
+// linePrefix is the per-line lead-in: a signal emoji in Emoji mode (carrying
+// the level that ANSI color otherwise would), else the plain two-space indent.
+func linePrefix(opt Options, m usage.Meter) string {
+	if !opt.Emoji {
+		return "  "
+	}
+	if m.UsedPercent != nil {
+		return signalEmoji(*m.UsedPercent) + " "
+	}
+	return emojiNeutral + " "
+}
+
+// signalEmoji mirrors colorByPct's thresholds (85 crit / 60 warn) as emoji.
+func signalEmoji(pct float64) string {
+	switch {
+	case pct >= 85:
+		return emojiCrit
+	case pct >= 60:
+		return emojiWarn
+	default:
+		return emojiOK
 	}
 }
 

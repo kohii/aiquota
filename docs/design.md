@@ -158,14 +158,15 @@ provider client 共通で最初から持たせる:
 
 ## GUI フェーズ
 
-### Raycast 拡張 ✅（`raycast/`）
+### Raycast Script Command + `--style emoji` ✅
 
-Script Command の `fullOutput` は ANSI 色を解釈せず見にくいため、Raycast ネイティブ拡張（React/TS, `@raycast/api` + `@raycast/utils`）を追加した。`aiquota --json` を `execFile` で叩いて描画するだけの薄い表示層で、Go の provider ロジックを単一の真実の源として再利用する（TS で再実装しない）。
+当初は Script Command の `fullOutput` が ANSI 色を解釈せず見にくかったため React/TS のネイティブ拡張を試作したが、検討の結果**撤去した**。拡張は `List` で 1 Meter=1 カードになり、CLI が持つ「等幅バー＋ pace マーカー（使用率 vs 経過率の一目比較）＋高密度で全枠を一画面俯瞰」という良さを失っていた。pace と縦圧縮はそもそも CLI 側に揃っており、プレーンテキストで失われるのは「色（警戒度の一目把握）」だけだった。
 
-- **描画**: プロバイダごと `List.Section`、Meter ごと `List.Item`。使用率は `getProgressIcon` の円形リング＋色付き % タグ（CLI と同じ閾値 ≥85 赤 / ≥60 黄 / else 緑）。`Unlimited` 枠は full-signal マーカー、`NotConfigured` は淡色行、本物のエラーは赤 Warning。`⌘D` で detail ペイン（生のカウント・window 経過率・source・取得時刻）、`⌘R` で再取得。
-- **pace / reset 整形 / 色閾値は JSON に焼かず TS 側の純関数で計算**（`src/lib.ts`、vitest でテスト）。pace は now 依存の派生値で、JSON に固定すると再描画時に古くなるため。CLI の `internal/render` と式を一致させている。
-- **バイナリ解決**: preference の絶対パス → 候補（`~/go/bin`, Homebrew, `/usr/local/bin`, `~/.local/bin`）を `X_OK` で探索 → `PATH` fallback。`bash -lc` は使わず `execFile`＋augmented `PATH`（クロスプラットフォーム・注入リスク回避）。未検出時は install ヒント＋ Open Preferences を提示。
-- **配布**: 個人利用。`npm run dev` で Raycast に取り込み、停止後も常駐。ストア公開はしない。
+そこで色を**信号絵文字で代替**する出力スタイルを CLI に追加した（`--style emoji`）。`fullOutput` は等幅プレーンテキストで ANSI を無視するが絵文字はカラー表示されるため、行頭の 🟢🟡🔴（CLI と同じ閾値 ≥85 赤 / ≥60 黄 / else 緑、上限なし枠と未報告は ⚪）で警戒度を伝えられる。全行が同一幅の絵文字＋スペースで始まるので、絵文字が全角でもバーの相対アラインメントは崩れない。
+
+- **`internal/render` が唯一の真実の源**: `Render` は `Options{Color, Emoji}` を取る。`auto`=TTY なら ANSI 色、`plain`=無装飾、`emoji`=信号絵文字（ANSI なし）。pace / reset 整形 / 閾値を TS で再実装する二重管理を解消した。
+- **配布**: `~/dotfiles/raycast/scripts/aiquota.sh` が `aiquota --style emoji` を `exec` するだけ。Raycast に限らず Alfred / SwiftBar / xbar でも同じ。バイナリは PATH（`~/go/bin` 等）で解決。
+- Claude の Keychain 読み取りは `security` を**絶対パス `/usr/bin/security`** で叩く。Raycast 等のランチャーは `/usr/bin` を含まない最小 PATH で子プロセスを起動するため、PATH 依存だと `executable file not found` で落ちていた。
 
 ### menubar GUI（未着手）
 

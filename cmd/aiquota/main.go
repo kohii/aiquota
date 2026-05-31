@@ -24,10 +24,12 @@ import (
 func main() {
 	var (
 		jsonOut       bool
+		style         string
 		claudeAccount string
 		timeout       time.Duration
 	)
 	flag.BoolVar(&jsonOut, "json", false, "JSON で出力する")
+	flag.StringVar(&style, "style", "auto", "出力スタイル: auto（TTYなら色）/ plain / emoji（信号絵文字 🟢🟡🔴）")
 	flag.StringVar(&claudeAccount, "claude-account", "", "Claude の Keychain account 名（省略時は service のみで照合）")
 	flag.DurationVar(&timeout, "timeout", 30*time.Second, "全体のタイムアウト")
 	flag.Usage = func() {
@@ -50,6 +52,14 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Resolve the output style before fetching so an invalid --style fails fast,
+	// without first reading the Keychain or hitting provider APIs.
+	opt, err := renderOptions(style, os.Stdout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -58,11 +68,28 @@ func main() {
 	if jsonOut {
 		writeJSON(os.Stdout, results)
 	} else {
-		render.Render(os.Stdout, results, isTerminal(os.Stdout))
+		render.Render(os.Stdout, results, opt)
 	}
 
 	if shouldFail(results) {
 		os.Exit(1)
+	}
+}
+
+// renderOptions maps the --style flag to render.Options. "auto" keeps the
+// original behavior (ANSI color only on a TTY); "emoji" trades ANSI for a
+// leading signal glyph so launchers that show plain monospaced text (Raycast's
+// fullOutput) still convey the usage level.
+func renderOptions(style string, out *os.File) (render.Options, error) {
+	switch style {
+	case "", "auto":
+		return render.Options{Color: isTerminal(out)}, nil
+	case "plain":
+		return render.Options{}, nil
+	case "emoji":
+		return render.Options{Emoji: true}, nil
+	default:
+		return render.Options{}, fmt.Errorf("不明な --style: %q (auto/plain/emoji)", style)
 	}
 }
 

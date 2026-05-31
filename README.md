@@ -20,8 +20,9 @@ A provider you don't use (tool not installed, or installed but not logged in) is
 ```sh
 go build -o aiquota ./cmd/aiquota
 
-./aiquota                 # all providers, formatted
+./aiquota                 # all providers, formatted (ANSI color on a TTY)
 ./aiquota --json          # machine-readable JSON
+./aiquota --style emoji   # plain text with 🟢🟡🔴 signals (for launchers that ignore ANSI)
 ./aiquota codex cursor    # selected providers only
 ./aiquota --claude-account <name>   # pin the Claude Keychain account
 ```
@@ -48,39 +49,18 @@ The `│` inside each bar is a **pace marker**: it shows how far the current res
 
 ## Quick access (Raycast / launchers)
 
-Install the binary first — every option below shells out to it:
+Install the binary first:
 
 ```sh
 go install github.com/kohii/aiquota/cmd/aiquota@latest
 ```
 
-### Raycast extension (recommended)
-
-A native Raycast extension lives in [`raycast/`](raycast/). Unlike a Script
-Command — whose `fullOutput` view is plain text and ignores ANSI color — the
-extension renders a proper list with **colored progress rings, percentage tags,
-and reset times** (red/yellow/green by the same thresholds as the CLI). It runs
-`aiquota --json` and is a thin display layer, so the Go providers stay the
-single source of truth.
-
-```sh
-cd raycast
-pnpm install
-pnpm dev         # imports it into Raycast; stays installed after you stop dev
-```
-
-(The extension pins pnpm via `packageManager`; pnpm fetches the right version
-automatically.) Then run **AI Usage** from Raycast (bind a hotkey if you like). `⌘D` toggles a
-detail pane (raw counts, window-elapsed %, source, fetch time); `⌘R` refreshes.
-The binary is auto-detected (`~/go/bin`, Homebrew, `/usr/local/bin`,
-`~/.local/bin`, then `PATH`); set an explicit path in the extension preferences
-if yours lives elsewhere.
-
-### Script Command (plain text)
-
-If you'd rather not build the extension, any launcher that runs a command works
-(Raycast Script Command, Alfred, SwiftBar/xbar). The output is plain monospace
-text:
+Any launcher that runs a command works (Raycast Script Command, Alfred,
+SwiftBar/xbar). Launchers show plain monospace text and ignore ANSI color, so
+use `--style emoji`: the bars, pace markers, and reset times stay, and a leading
+🟢🟡🔴 conveys the level that color otherwise would (same ≥85 / ≥60 thresholds;
+⚪ marks uncapped quotas). Because every line starts with a same-width glyph, the
+bars stay aligned even though emoji are full-width.
 
 ```bash
 #!/bin/bash
@@ -90,8 +70,13 @@ text:
 # @raycast.packageName aiquota
 # @raycast.icon 📊
 export PATH="$HOME/go/bin:$PATH"
-exec aiquota
+exec aiquota --style emoji
 ```
+
+> A native React/TS Raycast extension was prototyped but removed: its `List`
+> view turned each meter into a large card and lost the CLI's at-a-glance
+> density and pace marker. `--style emoji` brings the color back to the compact
+> text view, keeping `internal/render` the single source of truth.
 
 ## Design
 

@@ -140,7 +140,7 @@ func TestRender_PartialFailureAndUnknownMarker(t *testing.T) {
 		},
 		{Name: "claude", Err: &usage.ReauthError{Provider: "claude"}},
 	}
-	Render(&buf, results, false)
+	Render(&buf, results, Options{})
 	out := buf.String()
 	if !strings.Contains(out, "5h limit") {
 		t.Errorf("missing known meter line:\n%s", out)
@@ -153,13 +153,50 @@ func TestRender_PartialFailureAndUnknownMarker(t *testing.T) {
 	}
 }
 
+func TestRender_EmojiSignals(t *testing.T) {
+	var buf bytes.Buffer
+	results := []Result{
+		{
+			Name: "codex",
+			Usage: &usage.Usage{
+				Provider: "codex", Plan: "plus",
+				Meters: []usage.Meter{
+					{Key: "ok", Label: "Low", UsedPercent: usage.Ptr(20.0), Unit: usage.UnitPercent, Known: true},
+					{Key: "warn", Label: "Mid", UsedPercent: usage.Ptr(70.0), Unit: usage.UnitPercent, Known: true},
+					{Key: "crit", Label: "High", UsedPercent: usage.Ptr(95.0), Unit: usage.UnitPercent, Known: true},
+					{Key: "inf", Label: "Chat", Unit: usage.UnitPercent, Unlimited: true, Known: true},
+				},
+			},
+		},
+		{Name: "claude", Err: &usage.ReauthError{Provider: "claude"}},
+		{Name: "cursor", Err: &usage.NotConfiguredError{Provider: "cursor"}},
+	}
+	Render(&buf, results, Options{Emoji: true})
+	out := buf.String()
+	for _, want := range []string{
+		emojiOK + " Low",
+		emojiWarn + " Mid",
+		emojiCrit + " High",
+		emojiNeutral + " Chat", // no-percent meter
+		emojiError,             // genuine error
+		emojiNeutral + " not configured",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("emoji output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("emoji mode must not emit ANSI escapes:\n%q", out)
+	}
+}
+
 func TestRender_NotConfigured(t *testing.T) {
 	var buf bytes.Buffer
 	results := []Result{
 		{Name: "cursor", Err: &usage.NotConfiguredError{Provider: "cursor"}},
 		{Name: "codex", Err: &usage.NotConfiguredError{Provider: "codex", Reason: "ログインされていません"}},
 	}
-	Render(&buf, results, false)
+	Render(&buf, results, Options{})
 	out := buf.String()
 	if !strings.Contains(out, "not configured") {
 		t.Errorf("not-configured provider should show a quiet note:\n%s", out)
