@@ -23,6 +23,10 @@ const (
 	keychainSvc   = "Claude Code-credentials"
 	anthropicBeta = "oauth-2025-04-20"
 	userAgent     = "claude-code/1.0.0"
+	// securityBin is the macOS Keychain CLI. Use its absolute path so it resolves
+	// regardless of the caller's PATH: launchers like Raycast pass a minimal PATH
+	// that omits /usr/bin, which would otherwise make `security` "not found".
+	securityBin = "/usr/bin/security"
 )
 
 // Provider implements usage.Provider for Claude.
@@ -79,7 +83,7 @@ func readCredential(ctx context.Context, account string) (*credential, error) {
 		args = append(args, "-a", account)
 	}
 	args = append(args, "-w")
-	out, err := exec.CommandContext(ctx, "security", args...).Output()
+	out, err := exec.CommandContext(ctx, securityBin, args...).Output()
 	if err != nil {
 		// errSecItemNotFound (44): no such Keychain item -> claude not configured.
 		var ee *exec.ExitError
