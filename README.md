@@ -65,11 +65,12 @@ single source of truth.
 
 ```sh
 cd raycast
-npm install
-npm run dev      # imports it into Raycast; stays installed after you stop dev
+pnpm install
+pnpm dev         # imports it into Raycast; stays installed after you stop dev
 ```
 
-Then run **AI Usage** from Raycast (bind a hotkey if you like). `⌘D` toggles a
+(The extension pins pnpm via `packageManager`; pnpm fetches the right version
+automatically.) Then run **AI Usage** from Raycast (bind a hotkey if you like). `⌘D` toggles a
 detail pane (raw counts, window-elapsed %, source, fetch time); `⌘R` refreshes.
 The binary is auto-detected (`~/go/bin`, Homebrew, `/usr/local/bin`,
 `~/.local/bin`, then `PATH`); set an explicit path in the extension preferences

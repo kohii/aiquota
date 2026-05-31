@@ -39,9 +39,7 @@
     "typescript": "^5.5.4",
     "vitest": "^2.1.8"
   },
-  "overrides": {
-    "@types/react": "19.0.10"
-  },
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
     "build": "ray build -e dist",
     "dev": "ray develop",

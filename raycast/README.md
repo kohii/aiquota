@@ -21,9 +21,12 @@ Then load the extension into Raycast (development mode persists it after you
 stop the dev server):
 
 ```sh
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
+
+pnpm is pinned via the `packageManager` field, so the right version is fetched
+automatically.
 
 Run **AI Usage** from Raycast. The binary is auto-detected (`~/go/bin`,
 `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, then `PATH`); set an
@@ -39,7 +42,7 @@ show a dim line; genuine failures show a red warning.
 ## Develop
 
 ```sh
-npm test       # vitest — pure logic in src/lib.ts
-npm run lint   # ray lint (ESLint + Prettier)
-npm run build  # ray build (type-check + bundle)
+pnpm test    # vitest — pure logic in src/lib.ts
+pnpm lint    # ray lint (ESLint + Prettier)
+pnpm build   # ray build (type-check + bundle)
 ```
