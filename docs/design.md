@@ -1,4 +1,4 @@
-# aiquota 設計メモ（CLI フェーズ）
+# aiquota 設計メモ
 
 claude / codex / cursor / copilot のサブスクリプション usage を（ほぼ）リアルタイムに取得する CLI。
 JSON 出力（機械可読）と整形表示（CodexBar 相当の見やすさ）の両方を提供する。
@@ -62,6 +62,7 @@ type Meter struct {
     Currency    string     // Unit=usd のとき "USD" 等
     ResetsAt    *time.Time
     WindowStart *time.Time // 枠の開始時刻。ResetsAt と併せて「現在の経過率(pace)」を算出
+    Unlimited   bool       // プロバイダが「上限なし」と報告する枠（Copilot Chat/Completions 等）。UsedPercent=nil とは別概念で、消費側が「percent 未報告」を unlimited と誤推論しないための明示フラグ
     Known       bool       // 既知キーにマップできたか（false=未知枠を素通し）
 }
 
@@ -155,6 +156,17 @@ provider client 共通で最初から持たせる:
 3. state.vscdb の immutable 読みが Cursor の WAL 更新中に古い値を返す可能性 → 許容（usage は数分粒度）。または Keychain 経路を優先。
 4. レスポンススキーマは API 仕様非公開のため変化しうる → パースは寛容に（欠損は nil 許容、未知枠は素通し）。
 
-## GUI フェーズ（後続・未着手）
+## GUI フェーズ
 
-CLI をコア（`internal/` をライブラリ化 or `--json` を叩く）に、menubar GUI を被せる。Swift ネイティブか Go(systray) かは CLI 完成後に判断。CLI とは疎結合を保つ。
+### Raycast 拡張 ✅（`raycast/`）
+
+Script Command の `fullOutput` は ANSI 色を解釈せず見にくいため、Raycast ネイティブ拡張（React/TS, `@raycast/api` + `@raycast/utils`）を追加した。`aiquota --json` を `execFile` で叩いて描画するだけの薄い表示層で、Go の provider ロジックを単一の真実の源として再利用する（TS で再実装しない）。
+
+- **描画**: プロバイダごと `List.Section`、Meter ごと `List.Item`。使用率は `getProgressIcon` の円形リング＋色付き % タグ（CLI と同じ閾値 ≥85 赤 / ≥60 黄 / else 緑）。`Unlimited` 枠は full-signal マーカー、`NotConfigured` は淡色行、本物のエラーは赤 Warning。`⌘D` で detail ペイン（生のカウント・window 経過率・source・取得時刻）、`⌘R` で再取得。
+- **pace / reset 整形 / 色閾値は JSON に焼かず TS 側の純関数で計算**（`src/lib.ts`、vitest でテスト）。pace は now 依存の派生値で、JSON に固定すると再描画時に古くなるため。CLI の `internal/render` と式を一致させている。
+- **バイナリ解決**: preference の絶対パス → 候補（`~/go/bin`, Homebrew, `/usr/local/bin`, `~/.local/bin`）を `X_OK` で探索 → `PATH` fallback。`bash -lc` は使わず `execFile`＋augmented `PATH`（クロスプラットフォーム・注入リスク回避）。未検出時は install ヒント＋ Open Preferences を提示。
+- **配布**: 個人利用。`npm run dev` で Raycast に取り込み、停止後も常駐。ストア公開はしない。
+
+### menubar GUI（未着手）
+
+常時表示が欲しくなれば menubar（SwiftBar/xbar 対応 or Swift ネイティブ）を被せる余地はある。いずれも `--json` を叩く疎結合を保つ。

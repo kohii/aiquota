@@ -48,13 +48,38 @@ The `│` inside each bar is a **pace marker**: it shows how far the current res
 
 ## Quick access (Raycast / launchers)
 
-Install the binary, then run it from a launcher for instant access:
+Install the binary first — every option below shells out to it:
 
 ```sh
 go install github.com/kohii/aiquota/cmd/aiquota@latest
 ```
 
-For Raycast, drop a Script Command like this into your scripts directory:
+### Raycast extension (recommended)
+
+A native Raycast extension lives in [`raycast/`](raycast/). Unlike a Script
+Command — whose `fullOutput` view is plain text and ignores ANSI color — the
+extension renders a proper list with **colored progress rings, percentage tags,
+and reset times** (red/yellow/green by the same thresholds as the CLI). It runs
+`aiquota --json` and is a thin display layer, so the Go providers stay the
+single source of truth.
+
+```sh
+cd raycast
+npm install
+npm run dev      # imports it into Raycast; stays installed after you stop dev
+```
+
+Then run **AI Usage** from Raycast (bind a hotkey if you like). `⌘D` toggles a
+detail pane (raw counts, window-elapsed %, source, fetch time); `⌘R` refreshes.
+The binary is auto-detected (`~/go/bin`, Homebrew, `/usr/local/bin`,
+`~/.local/bin`, then `PATH`); set an explicit path in the extension preferences
+if yours lives elsewhere.
+
+### Script Command (plain text)
+
+If you'd rather not build the extension, any launcher that runs a command works
+(Raycast Script Command, Alfred, SwiftBar/xbar). The output is plain monospace
+text:
 
 ```bash
 #!/bin/bash
@@ -66,10 +91,6 @@ For Raycast, drop a Script Command like this into your scripts directory:
 export PATH="$HOME/go/bin:$PATH"
 exec aiquota
 ```
-
-Trigger it from Raycast (optionally bind a hotkey) to see usage instantly. The
-output is plain monospace text, so the same wrapper works with Alfred or
-SwiftBar/xbar too.
 
 ## Design
 
