@@ -66,13 +66,17 @@ func TestParseUsage_BusinessPlan(t *testing.T) {
 		t.Errorf("premium WindowStart = %v, want %v", prem.WindowStart.UTC(), wantStart)
 	}
 
-	// Unlimited quotas become marker lines: no percent, label suffixed.
+	// Unlimited quotas carry the Unlimited flag and no percent; the label stays
+	// clean (the renderer adds any "(unlimited)" suffix).
 	chat := findMeter(u, "chat")
 	if chat == nil || chat.UsedPercent != nil {
-		t.Errorf("chat should be an unlimited marker (no percent): %+v", chat)
+		t.Errorf("chat should be unlimited (no percent): %+v", chat)
 	}
-	if chat.Label != "Chat (unlimited)" {
-		t.Errorf("chat label = %q", chat.Label)
+	if !chat.Unlimited {
+		t.Errorf("chat should have Unlimited=true: %+v", chat)
+	}
+	if chat.Label != "Chat" {
+		t.Errorf("chat label = %q, want %q", chat.Label, "Chat")
 	}
 	// Unlimited markers carry no window, so the renderer prints no stray "resets".
 	if chat.ResetsAt != nil || chat.WindowStart != nil {

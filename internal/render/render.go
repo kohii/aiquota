@@ -93,6 +93,9 @@ func meterLine(p palette, m usage.Meter) string {
 	if label == "" {
 		label = m.Key
 	}
+	if m.Unlimited {
+		label = label + " (unlimited)"
+	}
 	if !m.Known {
 		label = label + " *"
 	}

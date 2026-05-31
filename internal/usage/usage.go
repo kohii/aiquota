@@ -39,7 +39,12 @@ type Meter struct {
 	// ResetsAt it lets the renderer show how far through the window "now" is
 	// (the pace marker), so usage can be compared against elapsed time.
 	WindowStart *time.Time `json:"windowStart,omitempty"`
-	Known       bool       `json:"known"`
+	// Unlimited marks a quota the provider reports as having no cap (e.g. GitHub
+	// Copilot Chat/Completions on a paid plan). It is distinct from "the provider
+	// did not report a percent": consumers must not infer unlimited from a nil
+	// UsedPercent. When true there is no bar/percent to show.
+	Unlimited bool `json:"unlimited,omitempty"`
+	Known     bool `json:"known"`
 }
 
 // Usage is one provider's normalized snapshot.

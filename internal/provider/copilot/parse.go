@@ -95,15 +95,16 @@ func parseUsage(body []byte) (*usage.Usage, error) {
 	return u, nil
 }
 
-// buildMeter normalizes one quota snapshot. Unlimited quotas become a marker
-// line (label suffixed, no bar); metered quotas carry percent + counts + reset.
+// buildMeter normalizes one quota snapshot. Unlimited quotas carry the
+// Unlimited flag (no bar/percent); metered ones carry percent + counts + reset.
 func buildMeter(key, label string, s quotaSnapshot, known bool, resetsAt, windowStart *time.Time) usage.Meter {
 	if s.Unlimited {
 		return usage.Meter{
-			Key:   key,
-			Label: label + " (unlimited)",
-			Unit:  usage.UnitRequests,
-			Known: known,
+			Key:       key,
+			Label:     label,
+			Unit:      usage.UnitRequests,
+			Unlimited: true,
+			Known:     known,
 		}
 	}
 
