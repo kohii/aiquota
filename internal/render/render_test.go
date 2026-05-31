@@ -152,3 +152,22 @@ func TestRender_PartialFailureAndUnknownMarker(t *testing.T) {
 		t.Errorf("error result should be shown:\n%s", out)
 	}
 }
+
+func TestRender_NotConfigured(t *testing.T) {
+	var buf bytes.Buffer
+	results := []Result{
+		{Name: "cursor", Err: &usage.NotConfiguredError{Provider: "cursor"}},
+		{Name: "codex", Err: &usage.NotConfiguredError{Provider: "codex", Reason: "ログインされていません"}},
+	}
+	Render(&buf, results, false)
+	out := buf.String()
+	if !strings.Contains(out, "not configured") {
+		t.Errorf("not-configured provider should show a quiet note:\n%s", out)
+	}
+	if strings.Contains(out, "⚠") {
+		t.Errorf("not-configured must not be shown as a warning:\n%s", out)
+	}
+	if !strings.Contains(out, "ログインされていません") {
+		t.Errorf("reason should be surfaced when present:\n%s", out)
+	}
+}

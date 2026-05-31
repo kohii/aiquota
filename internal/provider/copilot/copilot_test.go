@@ -1,9 +1,12 @@
 package copilot
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/kohii/aiquota/internal/usage"
 )
 
 // writeApps writes an apps.json fixture and returns its path.
@@ -46,14 +49,20 @@ func TestLoadToken_FallsBackToAnyHost(t *testing.T) {
 }
 
 func TestLoadToken_NoToken(t *testing.T) {
+	// File present but no token -> logged out -> NotConfigured (not a hard error).
 	path := writeApps(t, `{"github.com:Iv1.aaa": {"user": "kohii"}}`)
-	if _, err := loadToken(path); err == nil {
-		t.Error("expected error when no oauth_token is present")
+	_, err := loadToken(path)
+	var nc *usage.NotConfiguredError
+	if !errors.As(err, &nc) {
+		t.Errorf("err = %v, want NotConfiguredError", err)
 	}
 }
 
 func TestLoadToken_MissingFile(t *testing.T) {
-	if _, err := loadToken(filepath.Join(t.TempDir(), "absent.json")); err == nil {
-		t.Error("expected error for missing apps.json")
+	// Missing file -> Copilot not installed -> NotConfigured.
+	_, err := loadToken(filepath.Join(t.TempDir(), "absent.json"))
+	var nc *usage.NotConfiguredError
+	if !errors.As(err, &nc) {
+		t.Errorf("err = %v, want NotConfiguredError", err)
 	}
 }

@@ -73,5 +73,22 @@ func (e *ReauthError) Error() string {
 	return fmt.Sprintf("%s: 認証が無効です。%s", e.Provider, e.Hint)
 }
 
+// NotConfiguredError signals that a provider's local credential source is
+// simply absent — the tool is not installed, or installed but never logged in
+// — as opposed to a genuine failure (parse error, 401, network). The CLI shows
+// it as a quiet "not configured" line rather than a warning, and it does not
+// affect the exit code: a machine without some of the tools is not an error.
+type NotConfiguredError struct {
+	Provider string
+	Reason   string // optional short reason, e.g. "not logged in"
+}
+
+func (e *NotConfiguredError) Error() string {
+	if e.Reason != "" {
+		return fmt.Sprintf("%s: %s", e.Provider, e.Reason)
+	}
+	return fmt.Sprintf("%s: not configured", e.Provider)
+}
+
 // Ptr returns a pointer to v. Handy for building Meter fields inline.
 func Ptr[T any](v T) *T { return &v }

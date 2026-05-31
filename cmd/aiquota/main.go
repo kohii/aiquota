@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -60,7 +61,7 @@ func main() {
 		render.Render(os.Stdout, results, isTerminal(os.Stdout))
 	}
 
-	if !anySuccess(results) {
+	if shouldFail(results) {
 		os.Exit(1)
 	}
 }
@@ -105,20 +106,32 @@ func fetchAll(ctx context.Context, providers []usage.Provider) []render.Result {
 	return results
 }
 
-func anySuccess(results []render.Result) bool {
+// shouldFail reports a non-zero exit only when a genuine error occurred and
+// nothing succeeded. A "not configured" provider (tool absent / not logged in)
+// is neutral: a machine without some of the tools is not a failure.
+func shouldFail(results []render.Result) bool {
+	var success, realErr bool
 	for _, r := range results {
-		if r.Err == nil && r.Usage != nil {
-			return true
+		switch {
+		case r.Err == nil && r.Usage != nil:
+			success = true
+		case r.Err != nil:
+			var nc *usage.NotConfiguredError
+			if !errors.As(r.Err, &nc) {
+				realErr = true
+			}
 		}
 	}
-	return false
+	return realErr && !success
 }
 
-// jsonResult is the JSON shape: usage on success, error string on failure.
+// jsonResult is the JSON shape: usage on success, notConfigured when the tool
+// is absent / logged out, or an error string on a genuine failure.
 type jsonResult struct {
-	Provider string       `json:"provider"`
-	Usage    *usage.Usage `json:"usage,omitempty"`
-	Error    string       `json:"error,omitempty"`
+	Provider      string       `json:"provider"`
+	Usage         *usage.Usage `json:"usage,omitempty"`
+	NotConfigured bool         `json:"notConfigured,omitempty"`
+	Error         string       `json:"error,omitempty"`
 }
 
 func writeJSON(w *os.File, results []render.Result) {
@@ -126,7 +139,12 @@ func writeJSON(w *os.File, results []render.Result) {
 	for i, r := range results {
 		jr := jsonResult{Provider: r.Name, Usage: r.Usage}
 		if r.Err != nil {
-			jr.Error = r.Err.Error()
+			var nc *usage.NotConfiguredError
+			if errors.As(r.Err, &nc) {
+				jr.NotConfigured = true
+			} else {
+				jr.Error = r.Err.Error()
+			}
 		}
 		out[i] = jr
 	}

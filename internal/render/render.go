@@ -2,6 +2,7 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -50,6 +51,17 @@ func Render(w io.Writer, results []Result, color bool) {
 		}
 		fmt.Fprintln(w, header(p, r))
 		if r.Err != nil {
+			// "Not configured" (tool absent / not logged in) is shown quietly,
+			// not as a warning, and with any short reason the provider gave.
+			var nc *usage.NotConfiguredError
+			if errors.As(r.Err, &nc) {
+				note := "not configured"
+				if nc.Reason != "" {
+					note += " · " + nc.Reason
+				}
+				fmt.Fprintf(w, "  %s\n", p.dim("– "+note))
+				continue
+			}
 			fmt.Fprintf(w, "  %s %s\n", p.red("⚠"), r.Err.Error())
 			continue
 		}

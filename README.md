@@ -13,6 +13,8 @@ A small CLI that reports **claude / codex / cursor / copilot** subscription usag
 
 Tokens are never refreshed or rewritten. On auth failure (401) the tool tells you to re-login with the provider's own CLI/IDE (`codex login` / `claude` / Cursor IDE / VS Code Copilot).
 
+A provider you don't use (tool not installed, or installed but not logged in) is shown as a quiet dim `– not configured` line, never as a `⚠` warning, and does not affect the exit code — so the same command works unchanged across machines with different toolsets. Genuine failures (parse errors, 401, network) still surface as `⚠`. The exit code is non-zero only when a genuine error occurred and nothing succeeded. With `--json`, a not-configured provider is `{"provider": "...", "notConfigured": true}`.
+
 ## Usage
 
 ```sh

@@ -66,10 +66,15 @@ func (p *Provider) Fetch(ctx context.Context) (*usage.Usage, error) {
 	return u, nil
 }
 
-// loadAuth extracts the access token and account id from auth.json.
+// loadAuth extracts the access token and account id from auth.json. A missing
+// file (codex not installed) or an empty token (never logged in) is reported as
+// NotConfigured, not a hard error.
 func loadAuth(path string) (token, accountID string, err error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", &usage.NotConfiguredError{Provider: "codex"}
+		}
 		return "", "", fmt.Errorf("codex auth.json を読めません: %w", err)
 	}
 	var a struct {
@@ -82,7 +87,7 @@ func loadAuth(path string) (token, accountID string, err error) {
 		return "", "", fmt.Errorf("codex auth.json を解析できません: %w", err)
 	}
 	if a.Tokens.AccessToken == "" {
-		return "", "", errors.New("codex auth.json に access_token がありません（`codex login` 済みですか）")
+		return "", "", &usage.NotConfiguredError{Provider: "codex", Reason: "ログインされていません（`codex login`）"}
 	}
 	return a.Tokens.AccessToken, a.Tokens.AccountID, nil
 }

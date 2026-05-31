@@ -100,7 +100,10 @@ func loadToken(path string) (string, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("github copilot の apps.json を読めません（VS Code 等で Copilot にログイン済みですか）: %w", err)
+		if os.IsNotExist(err) {
+			return "", &usage.NotConfiguredError{Provider: "copilot"}
+		}
+		return "", fmt.Errorf("github copilot の apps.json を読めません: %w", err)
 	}
 	var m map[string]struct {
 		OAuthToken string `json:"oauth_token"`
@@ -127,7 +130,7 @@ func loadToken(path string) (string, error) {
 		}
 	}
 	if fallback == "" {
-		return "", errors.New("github copilot の apps.json に oauth_token がありません")
+		return "", &usage.NotConfiguredError{Provider: "copilot", Reason: "ログインされていません（VS Code 等で Copilot にログイン）"}
 	}
 	return fallback, nil
 }

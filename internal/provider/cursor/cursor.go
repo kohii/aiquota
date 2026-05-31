@@ -101,6 +101,10 @@ func readLocalState(path string) (*localState, error) {
 	if path == "" {
 		return nil, errors.New("cursor の state.vscdb パスを特定できません")
 	}
+	// A missing store means Cursor isn't installed -> not configured, not error.
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, &usage.NotConfiguredError{Provider: "cursor"}
+	}
 	dsn := "file:" + path + "?mode=ro&immutable=1"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -119,7 +123,8 @@ func readLocalState(path string) (*localState, error) {
 	err = db.QueryRow("SELECT value FROM ItemTable WHERE key = ?", tokenKey).Scan(&token)
 	switch {
 	case err == sql.ErrNoRows || (err == nil && strings.TrimSpace(token) == ""):
-		return nil, errors.New("cursor の accessToken が見つかりません（Cursor IDE でログイン済みですか）")
+		// Store exists but holds no token -> Cursor installed, not logged in.
+		return nil, &usage.NotConfiguredError{Provider: "cursor", Reason: "ログインされていません（Cursor IDE）"}
 	case err != nil:
 		return nil, fmt.Errorf("cursor state.vscdb を読めません: %w", err)
 	}

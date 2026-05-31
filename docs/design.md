@@ -128,7 +128,8 @@ provider client 共通で最初から持たせる:
 - `aiquota`               → 整形表示（全プロバイダ）
 - `aiquota --json`        → JSON 配列
 - `aiquota <provider>`    → 単一プロバイダ
-- 終了コード: 全失敗で非 0、部分成功は 0（表示にエラー併記）。
+- **未設定（未導入・未ログイン）の区別**: 認証情報ソースが存在しない場合は `NotConfiguredError` を返し、`⚠` ではなく淡色の `– not configured` 行で静かに表示。終了コードにも影響しない（ツール未導入の環境はエラーではない）。`--json` では `{"notConfigured": true}`。判定: Codex/Copilot=ファイル不在 or トークン空、Cursor=`state.vscdb` 不在 or token 行なし、Claude=`security` の終了コード 44（errSecItemNotFound）。
+- 終了コード: **本当のエラー（parse 失敗・401・ネットワーク等）があり、かつ成功が 0 件のとき**のみ非 0。部分成功は 0、未設定のみも 0。
 
 ## テスト
 

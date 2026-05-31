@@ -81,6 +81,11 @@ func readCredential(ctx context.Context, account string) (*credential, error) {
 	args = append(args, "-w")
 	out, err := exec.CommandContext(ctx, "security", args...).Output()
 	if err != nil {
+		// errSecItemNotFound (44): no such Keychain item -> claude not configured.
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 44 {
+			return nil, &usage.NotConfiguredError{Provider: "claude"}
+		}
 		return nil, fmt.Errorf("claude の Keychain 認証情報を読めません（`claude` でログイン済みですか）: %w", err)
 	}
 	var c struct {

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/kohii/aiquota/internal/render"
 	"github.com/kohii/aiquota/internal/usage"
 )
 
@@ -55,6 +57,29 @@ func TestSelectProviders(t *testing.T) {
 			t.Error("expected error for unknown provider")
 		}
 	})
+}
+
+func TestShouldFail(t *testing.T) {
+	ok := render.Result{Name: "claude", Usage: &usage.Usage{Provider: "claude"}}
+	notCfg := render.Result{Name: "cursor", Err: &usage.NotConfiguredError{Provider: "cursor"}}
+	realErr := render.Result{Name: "codex", Err: errors.New("boom")}
+
+	cases := []struct {
+		name    string
+		results []render.Result
+		want    bool
+	}{
+		{"a success", []render.Result{ok, notCfg}, false},
+		{"only not-configured is neutral", []render.Result{notCfg, notCfg}, false},
+		{"real error with no success fails", []render.Result{realErr, notCfg}, true},
+		{"real error but a success is ok", []render.Result{realErr, ok}, false},
+		{"empty is neutral", nil, false},
+	}
+	for _, c := range cases {
+		if got := shouldFail(c.results); got != c.want {
+			t.Errorf("%s: shouldFail = %v, want %v", c.name, got, c.want)
+		}
+	}
 }
 
 func equal(a, b []string) bool {
