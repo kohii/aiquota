@@ -22,9 +22,10 @@ func names(ps []usage.Provider) []string {
 
 func TestSelectProviders(t *testing.T) {
 	all := map[string]usage.Provider{
-		"codex":  stubProvider{"codex"},
-		"claude": stubProvider{"claude"},
-		"cursor": stubProvider{"cursor"},
+		"codex":   stubProvider{"codex"},
+		"claude":  stubProvider{"claude"},
+		"cursor":  stubProvider{"cursor"},
+		"copilot": stubProvider{"copilot"},
 	}
 
 	t.Run("default is all in fixed order", func(t *testing.T) {
@@ -32,7 +33,7 @@ func TestSelectProviders(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := []string{"codex", "claude", "cursor"}
+		want := []string{"codex", "claude", "cursor", "copilot"}
 		if g := names(got); !equal(g, want) {
 			t.Errorf("got %v, want %v", g, want)
 		}

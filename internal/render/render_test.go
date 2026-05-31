@@ -107,6 +107,24 @@ func TestPadRight_Multibyte(t *testing.T) {
 	}
 }
 
+func TestRequests(t *testing.T) {
+	usedLimit := usage.Meter{Unit: usage.UnitRequests, Used: usage.Ptr(11.6), Limit: usage.Ptr(300.0)}
+	if got := requests(usedLimit); got != "11.6 / 300" {
+		t.Errorf("used/limit => %q, want %q", got, "11.6 / 300")
+	}
+	remOnly := usage.Meter{Unit: usage.UnitRequests, Remaining: usage.Ptr(288.4)}
+	if got := requests(remOnly); got != "288.4 left" {
+		t.Errorf("remaining => %q, want %q", got, "288.4 left")
+	}
+	// Unlimited marker (no counts) and non-requests units produce nothing.
+	if got := requests(usage.Meter{Unit: usage.UnitRequests}); got != "" {
+		t.Errorf("empty requests meter => %q, want empty", got)
+	}
+	if got := requests(usage.Meter{Unit: usage.UnitUSD, Used: usage.Ptr(5.0), Limit: usage.Ptr(20.0)}); got != "" {
+		t.Errorf("USD meter => %q, want empty (handled by money)", got)
+	}
+}
+
 func TestRender_PartialFailureAndUnknownMarker(t *testing.T) {
 	var buf bytes.Buffer
 	results := []Result{

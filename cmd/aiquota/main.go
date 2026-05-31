@@ -1,6 +1,6 @@
-// Command aiquota reports claude / codex / cursor subscription usage by reading
-// each tool's local credentials (no extra permissions) and querying its usage
-// API. Prints a compact summary, or machine-readable JSON with --json.
+// Command aiquota reports claude / codex / cursor / copilot subscription usage
+// by reading each tool's local credentials (no extra permissions) and querying
+// its usage API. Prints a compact summary, or machine-readable JSON with --json.
 package main
 
 import (
@@ -14,6 +14,7 @@ import (
 
 	"github.com/kohii/aiquota/internal/provider/claude"
 	"github.com/kohii/aiquota/internal/provider/codex"
+	"github.com/kohii/aiquota/internal/provider/copilot"
 	"github.com/kohii/aiquota/internal/provider/cursor"
 	"github.com/kohii/aiquota/internal/render"
 	"github.com/kohii/aiquota/internal/usage"
@@ -30,15 +31,16 @@ func main() {
 	flag.DurationVar(&timeout, "timeout", 30*time.Second, "全体のタイムアウト")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: aiquota [flags] [provider...]\n\n")
-		fmt.Fprintf(os.Stderr, "providers: codex claude cursor (省略時は全部)\n\nflags:\n")
+		fmt.Fprintf(os.Stderr, "providers: codex claude cursor copilot (省略時は全部)\n\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
 	all := map[string]usage.Provider{
-		"codex":  codex.New(),
-		"claude": claude.New(claudeAccount),
-		"cursor": cursor.New(),
+		"codex":   codex.New(),
+		"claude":  claude.New(claudeAccount),
+		"cursor":  cursor.New(),
+		"copilot": copilot.New(),
 	}
 
 	providers, err := selectProviders(all, flag.Args())
@@ -64,15 +66,15 @@ func main() {
 }
 
 // selectProviders returns the requested providers in a stable order, or all of
-// them (codex, claude, cursor) when no names are given.
+// them (codex, claude, cursor, copilot) when no names are given.
 func selectProviders(all map[string]usage.Provider, names []string) ([]usage.Provider, error) {
-	order := []string{"codex", "claude", "cursor"}
+	order := []string{"codex", "claude", "cursor", "copilot"}
 	if len(names) > 0 {
 		order = nil
 		seen := map[string]bool{}
 		for _, n := range names {
 			if _, ok := all[n]; !ok {
-				return nil, fmt.Errorf("不明なプロバイダ: %q (codex/claude/cursor)", n)
+				return nil, fmt.Errorf("不明なプロバイダ: %q (codex/claude/cursor/copilot)", n)
 			}
 			if !seen[n] {
 				order = append(order, n)

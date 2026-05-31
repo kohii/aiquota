@@ -103,6 +103,9 @@ func meterLine(p palette, m usage.Meter) string {
 	if amt := money(m); amt != "" {
 		extras = append(extras, amt)
 	}
+	if cnt := requests(m); cnt != "" {
+		extras = append(extras, cnt)
+	}
 	if m.Unit == usage.UnitCredits && m.Used != nil {
 		extras = append(extras, fmt.Sprintf("%g credits", *m.Used))
 	}
@@ -137,6 +140,26 @@ func money(m usage.Meter) string {
 		return ""
 	}
 }
+
+// requests formats used/limit (or remaining) counts for request-style meters,
+// e.g. GitHub Copilot's premium interactions. Counts can be fractional, so %g
+// is used. Returns "" when there is nothing meaningful to show.
+func requests(m usage.Meter) string {
+	if m.Unit != usage.UnitRequests {
+		return ""
+	}
+	switch {
+	case m.Used != nil && m.Limit != nil:
+		return fmt.Sprintf("%g / %g", round1(*m.Used), round1(*m.Limit))
+	case m.Remaining != nil:
+		return fmt.Sprintf("%g left", round1(*m.Remaining))
+	default:
+		return ""
+	}
+}
+
+// round1 rounds to one decimal place to keep fractional request counts tidy.
+func round1(f float64) float64 { return math.Round(f*10) / 10 }
 
 // renderBar draws the usage bar. When pace is non-nil, the cell at the elapsed
 // position is replaced with a marker (│) so usage can be compared against how

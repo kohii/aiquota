@@ -1,5 +1,5 @@
 // Package usage defines the provider-agnostic usage model shared across
-// providers (codex / claude / cursor) and consumed by the CLI renderer.
+// providers (codex / claude / cursor / copilot) and consumed by the CLI renderer.
 package usage
 
 import (

@@ -1,6 +1,6 @@
 # aiquota
 
-A small CLI that reports **claude / codex / cursor** subscription usage in (near) real time, using only the credentials each tool already stores locally. It deliberately requires **no extra permissions** — no browser-cookie decryption, no Full Disk Access; the only Keychain read is a single Claude item at startup.
+A small CLI that reports **claude / codex / cursor / copilot** subscription usage in (near) real time, using only the credentials each tool already stores locally. It deliberately requires **no extra permissions** — no browser-cookie decryption, no Full Disk Access; the only Keychain read is a single Claude item at startup.
 
 ## How it reads usage
 
@@ -9,8 +9,9 @@ A small CLI that reports **claude / codex / cursor** subscription usage in (near
 | codex  | `~/.codex/auth.json` (plaintext) | `chatgpt.com/backend-api/wham/usage` |
 | claude | macOS Keychain item `Claude Code-credentials` | `api.anthropic.com/api/oauth/usage` |
 | cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (read-only) | `cursor.com/api/usage-summary` |
+| copilot | `~/.config/github-copilot/apps.json` (plaintext) | `api.github.com/copilot_internal/user` |
 
-Tokens are never refreshed or rewritten. On auth failure (401) the tool tells you to re-login with the provider's own CLI/IDE (`codex login` / `claude` / Cursor IDE).
+Tokens are never refreshed or rewritten. On auth failure (401) the tool tells you to re-login with the provider's own CLI/IDE (`codex login` / `claude` / Cursor IDE / VS Code Copilot).
 
 ## Usage
 
@@ -34,6 +35,11 @@ cursor · pro · you@example.com
   Plan (total)       [██│░░░░░░░░░░░░░]   20.6%  · $8.30 / $40.23  pace 12%  resets Jun 27 14:01
   Auto models        [█░│░░░░░░░░░░░░░]    4.1%  · pace 12%  resets Jun 27 14:01
   Named/API models   [██│█████████░░░░]   75.7%  · pace 12%  resets Jun 27 14:01
+
+copilot · business · you
+  Premium            [█░░░░░░░░░░░░░░│]    3.9%  · 11.6 / 300  pace 97%  resets 22h9m
+  Chat (unlimited)
+  Completions (unlimited)
 ```
 
 The `│` inside each bar is a **pace marker**: it shows how far the current reset window has elapsed (`pace NN%` is that elapsed fraction). **If the filled bar is to the left of the marker you're ahead of schedule; to the right you're burning faster than time.** For example, codex Weekly at 98% used with 99% elapsed is right on pace, while cursor's Plan at 20.6% used with only 12% elapsed is running a bit hot.
