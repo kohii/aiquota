@@ -190,6 +190,30 @@ func TestRender_EmojiSignals(t *testing.T) {
 	}
 }
 
+func TestRender_OmitsAccount(t *testing.T) {
+	var buf bytes.Buffer
+	results := []Result{
+		{
+			Name: "codex",
+			Usage: &usage.Usage{
+				Provider: "codex", Plan: "Pro", Account: "alice@example.com",
+				Meters: []usage.Meter{
+					{Key: "5h", Label: "5h limit", UsedPercent: usage.Ptr(26.0), Unit: usage.UnitPercent, Known: true},
+				},
+			},
+		},
+	}
+	Render(&buf, results, Options{})
+	out := buf.String()
+	if strings.Contains(out, "alice@example.com") {
+		t.Errorf("account/email must not appear in human-readable output:\n%s", out)
+	}
+	// The plan still shows; only the account is suppressed.
+	if !strings.Contains(out, "Pro") {
+		t.Errorf("plan should still be shown in the header:\n%s", out)
+	}
+}
+
 func TestRender_NotConfigured(t *testing.T) {
 	var buf bytes.Buffer
 	results := []Result{

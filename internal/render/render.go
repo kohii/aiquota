@@ -130,15 +130,14 @@ func signalEmoji(pct float64) string {
 	}
 }
 
+// header renders the provider title line as "provider · plan". The account
+// (an email for codex/cursor, a login for copilot) is deliberately omitted from
+// the human-readable output to avoid leaking it in shared terminals/screenshots;
+// it is still emitted in --json (which serializes usage.Usage directly).
 func header(p palette, r Result) string {
 	parts := []string{p.bold(p.cyan(r.Name))}
-	if r.Usage != nil {
-		if r.Usage.Plan != "" {
-			parts = append(parts, r.Usage.Plan)
-		}
-		if r.Usage.Account != "" {
-			parts = append(parts, p.dim(r.Usage.Account))
-		}
+	if r.Usage != nil && r.Usage.Plan != "" {
+		parts = append(parts, r.Usage.Plan)
 	}
 	return strings.Join(parts, " · ")
 }

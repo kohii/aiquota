@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -161,7 +162,7 @@ type jsonResult struct {
 	Error         string       `json:"error,omitempty"`
 }
 
-func writeJSON(w *os.File, results []render.Result) {
+func writeJSON(w io.Writer, results []render.Result) {
 	out := make([]jsonResult, len(results))
 	for i, r := range results {
 		jr := jsonResult{Provider: r.Name, Usage: r.Usage}

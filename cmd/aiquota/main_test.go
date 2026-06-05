@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/kohii/aiquota/internal/render"
@@ -79,6 +81,19 @@ func TestShouldFail(t *testing.T) {
 		if got := shouldFail(c.results); got != c.want {
 			t.Errorf("%s: shouldFail = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// The formatted output suppresses the account (verified in internal/render),
+// but --json must keep it so machine consumers retain full information.
+func TestWriteJSON_IncludesAccount(t *testing.T) {
+	var buf bytes.Buffer
+	results := []render.Result{
+		{Name: "codex", Usage: &usage.Usage{Provider: "codex", Plan: "Pro", Account: "alice@example.com"}},
+	}
+	writeJSON(&buf, results)
+	if out := buf.String(); !strings.Contains(out, `"account": "alice@example.com"`) {
+		t.Errorf("--json must include the account field:\n%s", out)
 	}
 }
 

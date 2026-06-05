@@ -13,7 +13,7 @@ A small CLI that reports **claude / codex / cursor / copilot** subscription usag
 
 Tokens are never refreshed or rewritten. On auth failure (401) the tool tells you to re-login with the provider's own CLI/IDE (`codex login` / `claude` / Cursor IDE / VS Code Copilot).
 
-A provider you don't use (tool not installed, or installed but not logged in) is shown as a quiet dim `– not configured` line, never as a `⚠` warning, and does not affect the exit code — so the same command works unchanged across machines with different toolsets. Genuine failures (parse errors, 401, network) still surface as `⚠`. The exit code is non-zero only when a genuine error occurred and nothing succeeded. With `--json`, a not-configured provider is `{"provider": "...", "notConfigured": true}`.
+A provider you don't use (tool not installed, or installed but not logged in) is shown as a quiet dim `– not configured` line, never as a `⚠` warning, and does not affect the exit code — so the same command works unchanged across machines with different toolsets. Genuine failures (parse errors, 401, network) still surface as `⚠`. The exit code is non-zero only when a genuine error occurred and nothing succeeded. With `--json`, a not-configured provider is `{"provider": "...", "notConfigured": true}`. The account (email/login) is shown only in `--json`; the formatted output omits it to avoid leaking it in a shared terminal or screenshot.
 
 ## Usage
 
@@ -30,16 +30,16 @@ go build -o aiquota ./cmd/aiquota
 Example output:
 
 ```
-codex · plus · you@example.com
+codex · plus
   5h limit           [████│░░░░░░░░░░░]   29.0%  · pace 23%  resets 3h49m
   Weekly limit       [███████████████│]   98.0%  · pace 99%  resets 2h8m
 
-cursor · pro · you@example.com
+cursor · pro
   Plan (total)       [██│░░░░░░░░░░░░░]   20.6%  · $8.30 / $40.23  pace 12%  resets Jun 27 14:01
   Auto models        [█░│░░░░░░░░░░░░░]    4.1%  · pace 12%  resets Jun 27 14:01
   Named/API models   [██│█████████░░░░]   75.7%  · pace 12%  resets Jun 27 14:01
 
-copilot · business · you
+copilot · business
   Premium            [█░░░░░░░░░░░░░░│]    3.9%  · 11.6 / 300  pace 97%  resets 22h9m
   Chat (unlimited)
   Completions (unlimited)
