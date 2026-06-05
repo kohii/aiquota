@@ -41,12 +41,13 @@ func (p palette) cyan(s string) string   { return p.wrap("36", s) }
 func (p palette) green(s string) string  { return p.wrap("32", s) }
 func (p palette) yellow(s string) string { return p.wrap("33", s) }
 func (p palette) red(s string) string    { return p.wrap("31", s) }
+func (p palette) blue(s string) string   { return p.wrap("34", s) }
 
 // Options controls how Render styles output.
 type Options struct {
 	// Color emits ANSI styling (used when stdout is a TTY).
 	Color bool
-	// Emoji prefixes each body line with a 🟢/🟡/🔴/⚪ signal so the usage level
+	// Emoji prefixes each body line with a 🔵/🟢/🟡/🔴/⚪ signal so the usage level
 	// reads at a glance where ANSI color isn't rendered — e.g. Raycast's
 	// fullOutput, which shows monospaced plain text but ignores ANSI. In
 	// practice it is used instead of Color, not alongside it.
@@ -54,6 +55,7 @@ type Options struct {
 }
 
 const (
+	emojiLoss    = "🔵"
 	emojiOK      = "🟢"
 	emojiWarn    = "🟡"
 	emojiCrit    = "🔴"
@@ -64,6 +66,7 @@ const (
 // Render writes all results to w using opt for styling.
 func Render(w io.Writer, results []Result, opt Options) {
 	p := palette{on: opt.Color}
+	now := time.Now()
 	for i, r := range results {
 		if i > 0 {
 			fmt.Fprintln(w)
@@ -101,32 +104,8 @@ func Render(w io.Writer, results []Result, opt Options) {
 			continue
 		}
 		for _, m := range r.Usage.Meters {
-			fmt.Fprintln(w, linePrefix(opt, m)+meterLine(p, m))
+			fmt.Fprintln(w, meterLine(p, opt, m, now))
 		}
-	}
-}
-
-// linePrefix is the per-line lead-in: a signal emoji in Emoji mode (carrying
-// the level that ANSI color otherwise would), else the plain two-space indent.
-func linePrefix(opt Options, m usage.Meter) string {
-	if !opt.Emoji {
-		return "  "
-	}
-	if m.UsedPercent != nil {
-		return signalEmoji(*m.UsedPercent) + " "
-	}
-	return emojiNeutral + " "
-}
-
-// signalEmoji mirrors colorByPct's thresholds (85 crit / 60 warn) as emoji.
-func signalEmoji(pct float64) string {
-	switch {
-	case pct >= 85:
-		return emojiCrit
-	case pct >= 60:
-		return emojiWarn
-	default:
-		return emojiOK
 	}
 }
 
@@ -142,7 +121,7 @@ func header(p palette, r Result) string {
 	return strings.Join(parts, " · ")
 }
 
-func meterLine(p palette, m usage.Meter) string {
+func meterLine(p palette, opt Options, m usage.Meter, now time.Time) string {
 	label := m.Label
 	if label == "" {
 		label = m.Key
@@ -155,15 +134,21 @@ func meterLine(p palette, m usage.Meter) string {
 	}
 	label = padRight(label, labelWidth)
 
-	var bar, value string
+	var bar, value, proj string
 	var pace *float64
+	var lvl *level
 	if m.UsedPercent != nil {
 		pct := *m.UsedPercent
-		if m.WindowStart != nil && m.ResetsAt != nil {
-			pace = ptr(pacePercent(*m.WindowStart, *m.ResetsAt, time.Now()))
+		pace = meterPace(m, now)
+		l := levelOf(pct, pace)
+		lvl = &l
+		bar = renderBar(p, l, pct, pace)
+		value = p.colorLevel(l, fmt.Sprintf("%5.1f%%", pct))
+		// Surface the projection that drives the color once the window is far
+		// enough along to trust it, so a cold/blue (or hot/red) line is legible.
+		if usablePace(pace) && *pace >= overrunFloor {
+			proj = p.dim(fmt.Sprintf("proj %.0f%%", pct / *pace * 100))
 		}
-		bar = renderBar(p, pct, pace)
-		value = colorByPct(p, pct, fmt.Sprintf("%5.1f%%", pct))
 	} else {
 		bar = strings.Repeat(" ", barWidth+2) // keep columns aligned
 	}
@@ -181,11 +166,14 @@ func meterLine(p palette, m usage.Meter) string {
 	if pace != nil {
 		extras = append(extras, p.dim(fmt.Sprintf("pace %.0f%%", *pace)))
 	}
+	if proj != "" {
+		extras = append(extras, proj)
+	}
 	if m.ResetsAt != nil {
 		extras = append(extras, p.dim("resets "+humanReset(*m.ResetsAt)))
 	}
 
-	line := label + " " + bar
+	line := linePrefix(opt, lvl) + label + " " + bar
 	if value != "" {
 		line += "  " + value
 	}
@@ -193,6 +181,19 @@ func meterLine(p palette, m usage.Meter) string {
 		line += "  " + p.dim("·") + " " + strings.Join(extras, "  ")
 	}
 	return line
+}
+
+// linePrefix is the per-line lead-in: a signal emoji in Emoji mode (carrying the
+// level that ANSI color otherwise would), else the plain two-space indent. lvl is
+// nil for meters with no percent to classify (e.g. unlimited quotas).
+func linePrefix(opt Options, lvl *level) string {
+	if !opt.Emoji {
+		return "  "
+	}
+	if lvl == nil {
+		return emojiNeutral + " "
+	}
+	return emojiFor(*lvl) + " "
 }
 
 // money formats USD used/limit when present.
@@ -234,7 +235,7 @@ func round1(f float64) float64 { return math.Round(f*10) / 10 }
 // position is replaced with a marker (│) so usage can be compared against how
 // far through the window "now" is: filled left of the marker means usage is
 // behind the clock (headroom), filled past it means burning faster than time.
-func renderBar(p palette, pct float64, pace *float64) string {
+func renderBar(p palette, lvl level, pct float64, pace *float64) string {
 	filled := clampCells(pct)
 	cells := make([]rune, barWidth)
 	for i := range cells {
@@ -246,16 +247,22 @@ func renderBar(p palette, pct float64, pace *float64) string {
 	}
 
 	if pace == nil {
-		return "[" + colorByPct(p, pct, string(cells)) + "]"
+		return "[" + p.colorLevel(lvl, string(cells)) + "]"
 	}
 
 	pos := clampCells(*pace)
 	if pos >= barWidth {
 		pos = barWidth - 1
 	}
-	left := colorByPct(p, pct, string(cells[:pos]))
-	marker := p.wrap("1;36", "│") // bold cyan, visible over filled or empty cells
-	right := colorByPct(p, pct, string(cells[pos+1:]))
+	// Bold cyan reads well over green/yellow/red bars, but blends into a blue
+	// (loss) bar — switch to bold bright-white there so the marker stays visible.
+	markerCode := "1;36"
+	if lvl == levelLoss {
+		markerCode = "1;97"
+	}
+	left := p.colorLevel(lvl, string(cells[:pos]))
+	marker := p.wrap(markerCode, "│")
+	right := p.colorLevel(lvl, string(cells[pos+1:]))
 	return "[" + left + marker + right + "]"
 }
 
@@ -269,6 +276,15 @@ func clampCells(pct float64) int {
 		return barWidth
 	}
 	return n
+}
+
+// meterPace returns the elapsed fraction (0-100) of the meter's reset window, or
+// nil when the window bounds are unknown.
+func meterPace(m usage.Meter, now time.Time) *float64 {
+	if m.WindowStart != nil && m.ResetsAt != nil {
+		return ptr(pacePercent(*m.WindowStart, *m.ResetsAt, now))
+	}
+	return nil
 }
 
 // pacePercent returns how far through the [start, reset] window now is, 0-100.
@@ -289,14 +305,89 @@ func pacePercent(start, reset, now time.Time) float64 {
 
 func ptr(f float64) *float64 { return &f }
 
-func colorByPct(p palette, pct float64, s string) string {
-	switch {
-	case pct >= 85:
-		return p.red(s)
-	case pct >= 60:
+// level classifies how a metered quota is tracking against its reset window.
+// The ordering Loss < Good < Warn < Crit lets the absolute "near cap" net escalate
+// with a plain comparison; Loss is assigned only in the pace branch and never
+// participates in those comparisons.
+type level int
+
+const (
+	levelLoss level = iota // tracking to finish well under cap — paying for unused quota
+	levelGood              // on track, or no reason for concern
+	levelWarn              // tracking to exhaust the quota somewhat early
+	levelCrit              // nearly out now, or tracking to run out well before reset
+)
+
+const (
+	absWarn = 60.0 // absolute-usage warn net, used when pace cannot decide
+	absCrit = 85.0 // absolute-usage crit net — nearly out *now*, regardless of pace
+
+	overrunFloor = 20.0 // min elapsed % before a projection may warn/crit (over-burn)
+	lossFloor    = 25.0 // min elapsed % before a projection may flag loss (under-burn)
+
+	projLoss = 60.0  // projected end-of-window % below this → loss (use-it-or-lose-it)
+	projWarn = 110.0 // projected % at/above → warn
+	projCrit = 140.0 // projected % at/above → crit
+)
+
+// levelOf classifies a meter by where it is tracking to finish the reset window,
+// projecting current usage to reset (projected = pct / pace). The framing is
+// use-it-or-lose-it: a quota tracking to finish far under cap is "loss" (you are
+// paying for headroom you won't use), shown cold/blue to nudge "use more"; one
+// tracking to exhaust early is warn/crit. Absolute nets still flag a quota already
+// nearly spent, and cover windows with no clock or one too early to project.
+func levelOf(pct float64, pace *float64) level {
+	if pct >= absCrit {
+		return levelCrit
+	}
+	if usablePace(pace) && *pace >= overrunFloor {
+		projected := pct / *pace * 100
+		switch {
+		case projected >= projCrit:
+			return levelCrit
+		case projected >= projWarn:
+			return levelWarn
+		case *pace >= lossFloor && projected < projLoss:
+			return levelLoss
+		default:
+			return levelGood
+		}
+	}
+	if pct >= absWarn {
+		return levelWarn
+	}
+	return levelGood
+}
+
+// usablePace reports whether pace is a finite, positive elapsed fraction we can
+// divide by to project end-of-window usage.
+func usablePace(pace *float64) bool {
+	return pace != nil && *pace > 0 && !math.IsNaN(*pace) && !math.IsInf(*pace, 0)
+}
+
+func (p palette) colorLevel(l level, s string) string {
+	switch l {
+	case levelLoss:
+		return p.blue(s)
+	case levelWarn:
 		return p.yellow(s)
+	case levelCrit:
+		return p.red(s)
 	default:
 		return p.green(s)
+	}
+}
+
+func emojiFor(l level) string {
+	switch l {
+	case levelLoss:
+		return emojiLoss
+	case levelWarn:
+		return emojiWarn
+	case levelCrit:
+		return emojiCrit
+	default:
+		return emojiOK
 	}
 }
 

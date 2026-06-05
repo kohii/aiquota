@@ -22,7 +22,7 @@ func TestRenderBar_Bounds(t *testing.T) {
 		{50, barWidth / 2},
 	}
 	for _, c := range cases {
-		bar := renderBar(p, c.pct, nil)
+		bar := renderBar(p, levelGood, c.pct, nil)
 		filled := strings.Count(bar, "█")
 		if filled != c.wantFilled {
 			t.Errorf("pct %.0f: filled=%d want %d (bar=%q)", c.pct, filled, c.wantFilled, bar)
@@ -57,10 +57,44 @@ func TestPacePercent(t *testing.T) {
 	}
 }
 
+func TestLevelOf(t *testing.T) {
+	cases := []struct {
+		name string
+		pct  float64
+		pace *float64
+		want level
+	}{
+		// No usable pace → fall back to absolute usage (never "loss").
+		{"no-pace low", 20, nil, levelGood},
+		{"no-pace mid", 70, nil, levelWarn},
+		{"no-pace high", 95, nil, levelCrit},
+		{"pace-zero falls back", 70, ptr(0.0), levelWarn},
+		// Mature pace projects end-of-window usage.
+		{"loss far behind", 18, ptr(75.0), levelLoss},         // proj 24%
+		{"used nothing late", 0, ptr(80.0), levelLoss},        // proj 0%
+		{"on track", 48, ptr(50.0), levelGood},                // proj 96%
+		{"high but on pace", 65, ptr(90.0), levelGood},        // proj 72% — not a warn
+		{"window over, half used", 50, ptr(100.0), levelLoss}, // proj 50%
+		{"slightly ahead", 33, ptr(28.0), levelWarn},          // proj ~118%
+		{"burning hot", 50, ptr(24.0), levelCrit},             // proj 208% — P0 case, not green
+		{"near cap always crit", 90, ptr(55.0), levelCrit},
+		// Early window: too soon to judge by pace; absolute nets still apply.
+		{"early modest stays calm", 50, ptr(19.0), levelGood},
+		{"early high warns", 70, ptr(10.0), levelWarn},
+		{"loss waits past lossFloor", 5, ptr(22.0), levelGood}, // 22<25 → not loss yet
+		{"loss once past lossFloor", 5, ptr(26.0), levelLoss},
+	}
+	for _, c := range cases {
+		if got := levelOf(c.pct, c.pace); got != c.want {
+			t.Errorf("%s: levelOf(%.0f, %v) = %d, want %d", c.name, c.pct, c.pace, got, c.want)
+		}
+	}
+}
+
 func TestRenderBar_Marker(t *testing.T) {
 	p := palette{on: false}
 	// 30% used, pace 50%: marker sits at cell 8 (round(0.5*16)).
-	bar := renderBar(p, 30, ptr(50.0))
+	bar := renderBar(p, levelGood, 30, ptr(50.0))
 	if !strings.Contains(bar, "│") {
 		t.Fatalf("expected pace marker in bar: %q", bar)
 	}
@@ -187,6 +221,38 @@ func TestRender_EmojiSignals(t *testing.T) {
 	}
 	if strings.Contains(out, "\x1b[") {
 		t.Errorf("emoji mode must not emit ANSI escapes:\n%q", out)
+	}
+}
+
+func TestRender_LossSignal(t *testing.T) {
+	// 18% used with 75% of the window elapsed (proj ~24%) is tracking to waste
+	// most of the quota: the line should read as a "loss" — blue in color mode,
+	// 🔵 in emoji mode — and surface the projection.
+	now := time.Now()
+	start := now.Add(-75 * time.Hour)
+	reset := now.Add(25 * time.Hour)
+	meter := usage.Meter{
+		Key: "weekly", Label: "Weekly limit", Unit: usage.UnitPercent, Known: true,
+		UsedPercent: usage.Ptr(18.0), WindowStart: &start, ResetsAt: &reset,
+	}
+	res := []Result{{Name: "codex", Usage: &usage.Usage{Provider: "codex", Plan: "plus", Meters: []usage.Meter{meter}}}}
+
+	var color bytes.Buffer
+	Render(&color, res, Options{Color: true})
+	if got := color.String(); !strings.Contains(got, "\x1b[34m") {
+		t.Errorf("under-paced meter should be blue (\\x1b[34m):\n%q", got)
+	}
+	if got := color.String(); !strings.Contains(got, "proj 24%") {
+		t.Errorf("projection should be shown to explain the color:\n%q", got)
+	}
+	if got := color.String(); !strings.Contains(got, "\x1b[1;97m") {
+		t.Errorf("loss bar should use a bright-white pace marker:\n%q", got)
+	}
+
+	var emoji bytes.Buffer
+	Render(&emoji, res, Options{Emoji: true})
+	if got := emoji.String(); !strings.Contains(got, emojiLoss+" Weekly limit") {
+		t.Errorf("under-paced meter should be prefixed with %s:\n%s", emojiLoss, got)
 	}
 }
 

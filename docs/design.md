@@ -82,6 +82,21 @@ CLI は全プロバイダを並列 `Fetch`、1 つが失敗しても他は表示
 
 `WindowStart`/`ResetsAt` がある Meter は、使用率バー内に「現在時刻がウィンドウのどこまで進んだか」を `│` マーカーで重ねて表示する（`pace NN%` も併記）。**使用バーがマーカーより左＝時間に対して余裕、右＝使いすぎ**。`WindowStart` の供給元: Codex=`reset_at - limit_window_seconds`、Cursor=`billingCycleStart`、Claude=`resets_at - 固定窓長`（5h / 7d、開始は推定）、Copilot=`quota_reset_date_utc - 1ヶ月`（毎月 1 日 00:00 UTC リセット）。窓長が不明な未知枠はマーカー無し。
 
+### 着色（ペース基準＝use-it-or-lose-it）
+
+固定サブスクの枠は「使い切れないと損」なので、色は**絶対使用率ではなく「着地予測」**で決める。着地予測 = `pct / pace × 100`（今のペースでリセット時に最終何%使うかの線形予測。バーの塗りがマーカーより左に大きく離れている＝余裕＝損、を色でも強調する）。`pace >= overrunFloor(20%)` 経過してから予測を信頼し、それ以前や窓無しの枠は絶対使用率にフォールバックする（時計が無い／早すぎて損とは言えないため、低使用は緑のまま）。`levelOf(pct, pace)` を**唯一の分類関数**とし、ANSI 色と信号絵文字の両方をここから導出する（旧 `colorByPct`/`signalEmoji` の閾値二重管理を解消）。
+
+| level | 条件 | 色 / 絵文字 | 意味 |
+|---|---|---|---|
+| Loss | `pace>=25%` かつ 着地予測 `<60%` | 青(34) / 🔵 | 使い切れず損。もっと使え |
+| Good | 上記以外で着地予測 ~`[60,110)%` | 緑(32) / 🟢 | ちょうど良いペース |
+| Warn | 着地予測 `>=110%` | 黄(33) / 🟡 | やや使いすぎ・やや早く枯渇 |
+| Crit | 絶対 `pct>=85%` または 着地予測 `>=140%` | 赤(31) / 🔴 | 今ほぼ枯渇 or 大きく早く枯渇 |
+
+- **安全網**: `pct>=85%`（今ほぼ使い切り）は pace を問わず常に Crit。窓が浅い間（`pace<20%`）も `pct>=60%→Warn / >=85%→Crit` の絶対フォールバックで過剰消費は拾う。一方 Loss(青)は早すぎる序盤ノイズを避けるため `pace>=25%` まで出さない（赤は早め・青は慎重、という非対称）。
+- **着色対象**は `UsedPercent != nil` の枠のみ＝各社のサブスク%枠（claude 5h/weekly、codex 5h/weekly、cursor plan%、copilot premium）で全て use-it-or-lose-it。コスト系（cursor on_demand `$`、codex credits）は percent 無しで対象外なので「もっと使え＝青」が誤発火しない。
+- **`proj NN%`** を行末に併記し、色の根拠（着地予測）を読めるようにする（`pace>=20%` のときのみ）。`pace=0`/NaN/Inf は `usablePace` でガードしフォールバック。Loss(青)時は pace マーカーを太字シアン→**明るい白(1;97)** に切替え、青バー上での視認性を確保。
+
 ## プロバイダ別の詳細
 
 ### Codex
@@ -162,9 +177,9 @@ provider client 共通で最初から持たせる:
 
 当初は Script Command の `fullOutput` が ANSI 色を解釈せず見にくかったため React/TS のネイティブ拡張を試作したが、検討の結果**撤去した**。拡張は `List` で 1 Meter=1 カードになり、CLI が持つ「等幅バー＋ pace マーカー（使用率 vs 経過率の一目比較）＋高密度で全枠を一画面俯瞰」という良さを失っていた。pace と縦圧縮はそもそも CLI 側に揃っており、プレーンテキストで失われるのは「色（警戒度の一目把握）」だけだった。
 
-そこで色を**信号絵文字で代替**する出力スタイルを CLI に追加した（`--style emoji`）。`fullOutput` は等幅プレーンテキストで ANSI を無視するが絵文字はカラー表示されるため、行頭の 🟢🟡🔴（CLI と同じ閾値 ≥85 赤 / ≥60 黄 / else 緑、上限なし枠と未報告は ⚪）で警戒度を伝えられる。全行が同一幅の絵文字＋スペースで始まるので、絵文字が全角でもバーの相対アラインメントは崩れない。
+そこで色を**信号絵文字で代替**する出力スタイルを CLI に追加した（`--style emoji`）。`fullOutput` は等幅プレーンテキストで ANSI を無視するが絵文字はカラー表示されるため、行頭の 🔵🟢🟡🔴（CLI の ANSI 色と同じ `levelOf` 由来＝🔵 使い切れず損 / 🟢 ちょうど / 🟡 やや使いすぎ / 🔴 枯渇間近、上限なし枠と未報告は ⚪）で状態を伝えられる。全行が同一幅の絵文字＋スペースで始まるので、絵文字が全角でもバーの相対アラインメントは崩れない。
 
-- **`internal/render` が唯一の真実の源**: `Render` は `Options{Color, Emoji}` を取る。`auto`=TTY なら ANSI 色、`plain`=無装飾、`emoji`=信号絵文字（ANSI なし）。pace / reset 整形 / 閾値を TS で再実装する二重管理を解消した。
+- **`internal/render` が唯一の真実の源**: `Render` は `Options{Color, Emoji}` を取る。`auto`=TTY なら ANSI 色、`plain`=無装飾、`emoji`=信号絵文字（ANSI なし）。色も絵文字も `levelOf`（着地予測ベース）から導出し、pace / reset 整形 / 閾値を TS で再実装する二重管理を解消した。
 - **配布**: `~/dotfiles/raycast/scripts/aiquota.sh` が `aiquota --style emoji` を `exec` するだけ。Raycast に限らず Alfred / SwiftBar / xbar でも同じ。バイナリは PATH（`~/go/bin` 等）で解決。
 - Claude の Keychain 読み取りは `security` を**絶対パス `/usr/bin/security`** で叩く。Raycast 等のランチャーは `/usr/bin` を含まない最小 PATH で子プロセスを起動するため、PATH 依存だと `executable file not found` で落ちていた。
 
