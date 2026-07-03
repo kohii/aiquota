@@ -108,6 +108,7 @@ CLI は全プロバイダを並列 `Fetch`、1 つが失敗しても他は表示
 - `security find-generic-password -s "Claude Code-credentials" [-a <account>] -w` → JSON（`claudeAiOauth.accessToken` 等）。**account は固定しない**（`--claude-account` / 環境変数で指定可、未指定なら service のみで読む。CodexBar も account は optional）。
 - `GET api.anthropic.com/api/oauth/usage`、`Authorization: Bearer`、`anthropic-beta: oauth-2025-04-20`、`User-Agent: claude-code/<version>`（CodexBar 準拠。UA 無しで弾かれる可能性に備える）。
 - 正規化: `five_hour → 5h`、`seven_day → weekly`、`seven_day_opus → weekly_opus`、`extra_usage → コスト Meter`、`seven_day_sonnet` / `seven_day_routines` / `seven_day_oauth_apps` 等は**未知 Meter として素通し**。
+- `limits` 配列（新形式、API 移行中）: `kind` ごとにモデル横断/モデル別の枠を持つ汎用リスト。`session` / `weekly_all` は `five_hour` / `seven_day` と重複するため除外。`weekly_scoped` は `scope.model.display_name`（例: 旧 `seven_day_sonnet` 相当の枠が "Fable" にローテーション）でモデル別 Meter 化し、`scope.model` が無い未知の `kind` は素通し。
 
 ### Cursor ✅ 認証経路 probe 済み（2026-05-31 実機確認）
 **ブラウザクッキー復号・FDA 不要**。`state.vscdb` のローカル token だけで `usage-summary` が取れることを実機確認した（membershipType=pro 等が 200 で返却）。

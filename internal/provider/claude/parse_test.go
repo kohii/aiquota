@@ -66,6 +66,51 @@ func TestParseUsage_RealShape(t *testing.T) {
 	}
 }
 
+// TestParseUsage_WeeklyScopedLimit covers the newer `limits` array shape,
+// where a per-model weekly quota (e.g. Fable rotating in for the retired
+// seven_day_sonnet key) is surfaced via a "weekly_scoped" entry instead of a
+// flat seven_day_<model> key.
+func TestParseUsage_WeeklyScopedLimit(t *testing.T) {
+	body := []byte(`{
+		"five_hour": {"utilization": 63.0, "resets_at": "2026-07-03T03:09:59Z"},
+		"seven_day": {"utilization": 44.0, "resets_at": "2026-07-03T21:59:59Z"},
+		"seven_day_opus": null,
+		"seven_day_sonnet": null,
+		"limits": [
+			{"kind": "session", "group": "session", "percent": 63, "resets_at": "2026-07-03T03:09:59Z", "scope": null},
+			{"kind": "weekly_all", "group": "weekly", "percent": 44, "resets_at": "2026-07-03T21:59:59Z", "scope": null},
+			{"kind": "weekly_scoped", "group": "weekly", "percent": 42, "resets_at": "2026-07-03T21:59:59Z", "scope": {"model": {"id": null, "display_name": "Fable"}}}
+		]
+	}`)
+
+	u, err := parseUsage(body)
+	if err != nil {
+		t.Fatalf("parseUsage: %v", err)
+	}
+
+	fable := findMeter(u, "weekly_scoped_fable")
+	if fable == nil {
+		t.Fatalf("weekly_scoped_fable meter missing")
+	}
+	if !fable.Known || fable.Label != "Weekly (Fable)" {
+		t.Errorf("fable meter wrong: %+v", fable)
+	}
+	if fable.UsedPercent == nil || *fable.UsedPercent != 42 {
+		t.Errorf("fable usedPercent = %v, want 42", fable.UsedPercent)
+	}
+	if fable.WindowStart == nil {
+		t.Errorf("fable meter missing WindowStart")
+	}
+
+	// session/weekly_all duplicate five_hour/seven_day and must not appear
+	// as separate meters.
+	for _, key := range []string{"limits[0]_session", "limits[1]_weekly_all"} {
+		if findMeter(u, key) != nil {
+			t.Errorf("%s should have been skipped as a duplicate", key)
+		}
+	}
+}
+
 func TestParseUsage_ExtraUsageDisabled(t *testing.T) {
 	body := []byte(`{
 		"five_hour": {"utilization": 1.0, "resets_at": "2026-05-31T01:59:59Z"},

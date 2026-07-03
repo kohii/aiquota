@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/kohii/aiquota/internal/usage"
@@ -103,6 +104,62 @@ func parseUsage(body []byte) (*usage.Usage, error) {
 			}
 			u.Meters = append(u.Meters, m)
 			knownFound++
+		}
+	}
+
+	// limits is a newer, more general array the API is migrating to: entries
+	// scope a quota by kind (session/weekly_all/weekly_scoped/...) and,
+	// for weekly_scoped, by model (e.g. display_name "Fable" superseding the
+	// old seven_day_sonnet-style flat key once that model rotates in). The
+	// "session" and "weekly_all" kinds duplicate five_hour/seven_day above, so
+	// only per-model scoped entries are surfaced here; anything else is passed
+	// through unrecognized so future kinds are never silently dropped.
+	seen["limits"] = true
+	if rawMsg, ok := raw["limits"]; ok {
+		var limits []struct {
+			Kind     string   `json:"kind"`
+			Group    string   `json:"group"`
+			Percent  *float64 `json:"percent"`
+			ResetsAt string   `json:"resets_at"`
+			Scope    *struct {
+				Model *struct {
+					DisplayName string `json:"display_name"`
+				} `json:"model"`
+			} `json:"scope"`
+		}
+		if err := json.Unmarshal(rawMsg, &limits); err == nil {
+			for i, l := range limits {
+				if l.Kind == "session" || l.Kind == "weekly_all" || l.Percent == nil {
+					continue
+				}
+				known := l.Scope != nil && l.Scope.Model != nil && l.Scope.Model.DisplayName != ""
+				var key, label string
+				if known {
+					slug := strings.ToLower(strings.ReplaceAll(l.Scope.Model.DisplayName, " ", "_"))
+					key = "weekly_scoped_" + slug
+					label = fmt.Sprintf("Weekly (%s)", l.Scope.Model.DisplayName)
+				} else {
+					key = fmt.Sprintf("limits[%d]_%s", i, l.Kind)
+					label = key
+				}
+				m := usage.Meter{
+					Key:         key,
+					Label:       label,
+					UsedPercent: l.Percent,
+					Unit:        usage.UnitPercent,
+					Known:       known,
+				}
+				if t, err := time.Parse(time.RFC3339, l.ResetsAt); err == nil {
+					m.ResetsAt = &t
+					if l.Group == "weekly" {
+						m.WindowStart = usage.Ptr(t.Add(-7 * 24 * time.Hour))
+					}
+				}
+				u.Meters = append(u.Meters, m)
+				if known {
+					knownFound++
+				}
+			}
 		}
 	}
 
