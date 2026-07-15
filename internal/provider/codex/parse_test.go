@@ -81,6 +81,34 @@ func TestParseUsage_WithCreditsAndExtraWindow(t *testing.T) {
 	}
 }
 
+func TestParseUsage_WeeklyOnlyPlusAccount(t *testing.T) {
+	// Post-2026 codex API: 5h window retired, only weekly remains and it now
+	// arrives in primary_window. The label must follow the duration, not the
+	// field name.
+	body := []byte(`{
+		"email": "u@example.com",
+		"plan_type": "plus",
+		"rate_limit": {
+			"primary_window": {"used_percent": 9, "limit_window_seconds": 604800, "reset_at": 1780187148}
+		},
+		"credits": {"has_credits": false, "unlimited": false, "balance": "0"}
+	}`)
+	u, err := parseUsage(body)
+	if err != nil {
+		t.Fatalf("parseUsage: %v", err)
+	}
+	if got := len(u.Meters); got != 1 {
+		t.Fatalf("meters = %d, want 1 (weekly only)", got)
+	}
+	if findMeter(u, "5h") != nil {
+		t.Error("weekly-length primary_window must not be labeled as 5h")
+	}
+	week := findMeter(u, "weekly")
+	if week == nil || week.UsedPercent == nil || *week.UsedPercent != 9 {
+		t.Errorf("weekly meter wrong: %+v", week)
+	}
+}
+
 func TestParseUsage_DriftReturnsError(t *testing.T) {
 	// No recognizable windows -> schema drift -> error (not a silent success).
 	body := []byte(`{"plan_type":"pro","rate_limit":{},"credits":{}}`)

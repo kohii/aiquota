@@ -53,14 +53,20 @@ func parseUsage(body []byte) (*usage.Usage, error) {
 		Plan:     r.PlanType,
 	}
 
+	// codex historically returned primary=5h + secondary=weekly, but in
+	// mid-2026 the 5h window was retired and the weekly window can now arrive
+	// in either slot. Route by limit_window_seconds so the label stays right
+	// across the transition.
 	knownFound := 0
-	if m, ok := windowMeter("5h", "5h limit", r.RateLimit.PrimaryWindow, true); ok {
-		u.Meters = append(u.Meters, m)
-		knownFound++
-	}
-	if m, ok := windowMeter("weekly", "Weekly limit", r.RateLimit.SecondaryWindow, true); ok {
-		u.Meters = append(u.Meters, m)
-		knownFound++
+	for _, w := range []*whamWindow{r.RateLimit.PrimaryWindow, r.RateLimit.SecondaryWindow} {
+		key, label, known := classifyWindow(w)
+		if !known {
+			continue
+		}
+		if m, ok := windowMeter(key, label, w, true); ok {
+			u.Meters = append(u.Meters, m)
+			knownFound++
+		}
 	}
 	for _, a := range r.AdditionalRateLimits {
 		label := a.Name
@@ -91,6 +97,24 @@ func parseUsage(body []byte) (*usage.Usage, error) {
 		return nil, errors.New("codex usage に既知の枠が見つかりません（API 仕様変更の可能性）")
 	}
 	return u, nil
+}
+
+// classifyWindow identifies a codex rate-limit window by its length rather
+// than by which JSON field it arrived in. Windows the API might add in the
+// future report known=false so the caller can either skip or surface them
+// generically instead of mislabeling them.
+func classifyWindow(w *whamWindow) (key, label string, known bool) {
+	if w == nil {
+		return "", "", false
+	}
+	switch s := w.LimitWindowSeconds; {
+	case s > 0 && s <= 6*3600: // codex uses 18000 (5h)
+		return "5h", "5h limit", true
+	case s >= 6*24*3600: // codex uses 604800 (7d)
+		return "weekly", "Weekly limit", true
+	default:
+		return "", "", false
+	}
 }
 
 func windowMeter(key, label string, w *whamWindow, known bool) (usage.Meter, bool) {

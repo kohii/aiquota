@@ -102,7 +102,7 @@ CLI は全プロバイダを並列 `Fetch`、1 つが失敗しても他は表示
 ### Codex
 - `~/.codex/auth.json`（`CODEX_HOME` 尊重）から `tokens.access_token` / `account_id`。
 - `GET chatgpt.com/backend-api/wham/usage`、`Authorization: Bearer`、`ChatGPT-Account-Id: <account_id>`。
-- 正規化: `primary_window → 5h`、`secondary_window → weekly`、`credits`、`plan_type`。
+- 正規化: `rate_limit.{primary,secondary}_window` を `limit_window_seconds` で分類（≤6h → `5h`、≥6d → `weekly`）。2026 年 mid の API 変更で 5h 窓が廃止され weekly が primary_window に入るようになったため、フィールド名ではなく窓長で判定する。`credits` / `plan_type` は従来通り。
 
 ### Claude
 - `security find-generic-password -s "Claude Code-credentials" [-a <account>] -w` → JSON（`claudeAiOauth.accessToken` 等）。**account は固定しない**（`--claude-account` / 環境変数で指定可、未指定なら service のみで読む。CodexBar も account は optional）。
