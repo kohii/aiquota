@@ -41,7 +41,7 @@ cursor · pro
 🔴 Named/API models   [███████│███████████▉░░░░]   82.7%  · pace 30%  resets Jun 27 14:01
 
 copilot · business
-🟢 Premium            [███████████████████▎░░░│]   80.0%  · 240 / 300  pace 97%  resets 22h9m
+🟢 Premium            [████████████████████▍░░│]   85.0%  · 255 / 300  pace 97%  resets 22h9m
 ⚪ Chat (unlimited)
 ⚪ Completions (unlimited)
 ```
@@ -53,7 +53,7 @@ These are **flat-rate, use-it-or-lose-it** quotas, so the color answers *"are yo
 - 🔵 **blue** — tracking to finish well under the cap. You're paying for headroom you won't touch: *use more or lose it.*
 - 🟢 **green** — on track to use most of the window.
 - 🟡 **yellow** — tracking to run out somewhat early.
-- 🔴 **red** — nearly spent right now, or tracking to run out well before reset.
+- 🔴 **red** — tracking to run out well before reset, or so close to the cap that the headroom won't cover the window still ahead.
 
 The `│` inside each bar is the **pace marker**: how far the current reset window has elapsed (`pace NN%`), replacing the cell it lands on. The bigger the gap with the filled bar to its **left**, the more you're leaving on the table (the blue case); filled **past** the marker means you're burning faster than time. Early in a window (before ~20–25% elapsed) the projection is too noisy to trust, so a meter with no clock or a barely-started window falls back to plain "how full" coloring.
 

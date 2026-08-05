@@ -342,22 +342,20 @@ func pacePercent(start, reset, now time.Time) float64 {
 
 func ptr(f float64) *float64 { return &f }
 
-// level classifies how a metered quota is tracking against its reset window.
-// The ordering Loss < Good < Warn < Crit lets the absolute "near cap" net escalate
-// with a plain comparison; Loss is assigned only in the pace branch and never
-// participates in those comparisons.
+// level classifies how a metered quota is tracking against its reset window,
+// and drives both the ANSI color and the signal emoji.
 type level int
 
 const (
 	levelLoss level = iota // tracking to finish well under cap — paying for unused quota
 	levelGood              // on track, or no reason for concern
 	levelWarn              // tracking to exhaust the quota somewhat early
-	levelCrit              // nearly out now, or tracking to run out well before reset
+	levelCrit              // running dry with window left, or tracking to run out well before reset
 )
 
 const (
 	absWarn = 60.0 // absolute-usage warn net, used when pace cannot decide
-	absCrit = 85.0 // absolute-usage crit net — nearly out *now*, regardless of pace
+	absCrit = 85.0 // absolute-usage crit net, used when pace cannot decide
 
 	overrunFloor = 20.0 // min elapsed % before a projection may warn/crit (over-burn)
 	lossFloor    = 25.0 // min elapsed % before a projection may flag loss (under-burn)
@@ -365,21 +363,28 @@ const (
 	projLoss = 60.0  // projected end-of-window % below this → loss (use-it-or-lose-it)
 	projWarn = 110.0 // projected % at/above → warn
 	projCrit = 140.0 // projected % at/above → crit
+
+	// nearCapRunway gates the near-cap net: only a quota whose headroom covers
+	// less than this share of the window still ahead is critical. At 1.0 the
+	// headroom lasts exactly to the reset, so anything under 1 means a lockout
+	// before it; the margin below 1 keeps a quota landing right on the cap green
+	// (that is ideal use-it-or-lose-it, not an emergency).
+	nearCapRunway = 0.8
 )
 
 // levelOf classifies a meter by where it is tracking to finish the reset window,
 // projecting current usage to reset (projected = pct / pace). The framing is
 // use-it-or-lose-it: a quota tracking to finish far under cap is "loss" (you are
 // paying for headroom you won't use), shown cold/blue to nudge "use more"; one
-// tracking to exhaust early is warn/crit. Absolute nets still flag a quota already
-// nearly spent, and cover windows with no clock or one too early to project.
+// tracking to exhaust early is warn/crit. The projection is most sensitive early
+// in a window, so a near-cap net covers the other end (see runway), and absolute
+// nets cover windows with no clock or one too early to project.
 func levelOf(pct float64, pace *float64) level {
-	if pct >= absCrit {
-		return levelCrit
-	}
 	if usablePace(pace) && *pace >= overrunFloor {
 		projected := pct / *pace * 100
 		switch {
+		case pct >= absCrit && runway(pct, *pace) < nearCapRunway:
+			return levelCrit
 		case projected >= projCrit:
 			return levelCrit
 		case projected >= projWarn:
@@ -390,10 +395,29 @@ func levelOf(pct float64, pace *float64) level {
 			return levelGood
 		}
 	}
+	if pct >= absCrit {
+		return levelCrit
+	}
 	if pct >= absWarn {
 		return levelWarn
 	}
 	return levelGood
+}
+
+// runway reports how much of the window still ahead the remaining headroom
+// covers at the current burn rate: 1 means it lasts exactly to the reset, 0.5
+// means running dry halfway through what is left. It is what makes "nearly out"
+// mean something — 85% spent is an emergency with half the window to go and
+// unremarkable with an hour of it left — where the projection cannot tell those
+// apart (both land near the cap). +Inf when nothing can run out: no window left,
+// or no usage yet to extrapolate a rate from.
+func runway(pct, pace float64) float64 {
+	ahead := 100 - pace
+	if ahead <= 0 || pct <= 0 {
+		return math.Inf(1)
+	}
+	rate := pct / pace // quota % burned per % of window elapsed
+	return (100 - pct) / rate / ahead
 }
 
 // usablePace reports whether pace is a finite, positive elapsed fraction we can

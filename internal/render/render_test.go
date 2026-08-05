@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -115,16 +116,44 @@ func TestLevelOf(t *testing.T) {
 		{"window over, half used", 50, ptr(100.0), levelLoss}, // proj 50%
 		{"slightly ahead", 33, ptr(28.0), levelWarn},          // proj ~118%
 		{"burning hot", 50, ptr(24.0), levelCrit},             // proj 208% — P0 case, not green
-		{"near cap always crit", 90, ptr(55.0), levelCrit},
+		// Near-cap net: critical only while a lockout would still bite.
+		{"near cap, half the window to go", 90, ptr(55.0), levelCrit}, // runway 0.14
+		{"near cap, dry before reset", 95, ptr(90.0), levelCrit},      // runway 0.47
+		{"near cap, window nearly over", 85, ptr(97.0), levelGood},    // runway 5.7 — proj 88%, ideal
+		{"lands right on the cap", 99, ptr(99.0), levelGood},          // runway 1.0 — no lockout
+		{"exhausted mid-window", 100, ptr(60.0), levelCrit},           // runway 0 — blocked now
 		// Early window: too soon to judge by pace; absolute nets still apply.
 		{"early modest stays calm", 50, ptr(19.0), levelGood},
 		{"early high warns", 70, ptr(10.0), levelWarn},
+		{"early near cap crits", 90, ptr(10.0), levelCrit},
 		{"loss waits past lossFloor", 5, ptr(22.0), levelGood}, // 22<25 → not loss yet
 		{"loss once past lossFloor", 5, ptr(26.0), levelLoss},
 	}
 	for _, c := range cases {
 		if got := levelOf(c.pct, c.pace); got != c.want {
 			t.Errorf("%s: levelOf(%.0f, %v) = %d, want %d", c.name, c.pct, c.pace, got, c.want)
+		}
+	}
+}
+
+func TestRunway(t *testing.T) {
+	cases := []struct {
+		pct, pace, want float64
+	}{
+		{50, 50, 1},       // burning exactly with the clock: lasts to the reset
+		{75, 50, 1.0 / 3}, // double pace: dry after a third of what is left
+		{25, 50, 3},       // half pace: three times the remaining window
+		{100, 60, 0},      // already exhausted
+	}
+	for _, c := range cases {
+		if got := runway(c.pct, c.pace); math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("runway(%.0f, %.0f) = %v, want %v", c.pct, c.pace, got, c.want)
+		}
+	}
+	// Nothing can run out: the window is over, or nothing has been used yet.
+	for _, c := range [][2]float64{{50, 100}, {0, 50}} {
+		if got := runway(c[0], c[1]); !math.IsInf(got, 1) {
+			t.Errorf("runway(%.0f, %.0f) = %v, want +Inf", c[0], c[1], got)
 		}
 	}
 }
