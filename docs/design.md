@@ -95,7 +95,11 @@ CLI は全プロバイダを並列 `Fetch`、1 つが失敗しても他は表示
 
 - **安全網**: `pct>=85%`（今ほぼ使い切り）は pace を問わず常に Crit。窓が浅い間（`pace<20%`）も `pct>=60%→Warn / >=85%→Crit` の絶対フォールバックで過剰消費は拾う。一方 Loss(青)は早すぎる序盤ノイズを避けるため `pace>=25%` まで出さない（赤は早め・青は慎重、という非対称）。
 - **着色対象**は `UsedPercent != nil` の枠のみ＝各社のサブスク%枠（claude 5h/weekly、codex 5h/weekly、cursor plan%、copilot premium）で全て use-it-or-lose-it。コスト系（cursor on_demand `$`、codex credits）は percent 無しで対象外なので「もっと使え＝青」が誤発火しない。
-- **`proj NN%`** を行末に併記し、色の根拠（着地予測）を読めるようにする（`pace>=20%` のときのみ）。`pace=0`/NaN/Inf は `usablePace` でガードしフォールバック。Loss(青)時は pace マーカーを太字シアン→**明るい白(1;97)** に切替え、青バー上での視認性を確保。
+- **`proj NN%`**（色の根拠＝着地予測）は `--proj` のオプトイン表示にした（`pace>=20%` のときのみ）。`pct` と `pace` から導ける値であり、常時出すと横幅をバーの解像度に回せないため既定では出さない。`pace=0`/NaN/Inf は `usablePace` でガードしフォールバック。Loss(青)時は pace マーカーを太字シアン→**明るい白(1;97)** に切替え、青バー上での視認性を確保。
+
+### バーの解像度
+
+バーは 24 セル。境界セルを 1/8 刻みの部分ブロック（`▏▎▍▌▋▊▉`）で描くので実効解像度は `24×8 = 192` 分割 ≈ **0.5pt**。旧 16 セル（1 セル 6.25pt）では 6pt 近い差が同じ絵になり得たが、0.5pt なら気にする程度の差は必ず形に出る。セル数だけで 192 分割を得るには 192 セル必要で横幅に載らないため、長さ（16→24）と部分ブロックの併用を選んだ。pace マーカー `│` は乗った 1 セルを置換する（その位置の塗りは見えなくなる）が、マーカーは「塗りとの左右関係」を読むためのものなので実用上の損失は無い。この横幅増は `proj` のオプトイン化（上記）で相殺している。
 
 ## プロバイダ別の詳細
 
@@ -180,7 +184,7 @@ provider client 共通で最初から持たせる:
 
 そこで色を**信号絵文字で代替**する出力スタイルを CLI に追加した（`--style emoji`）。`fullOutput` は等幅プレーンテキストで ANSI を無視するが絵文字はカラー表示されるため、行頭の 🔵🟢🟡🔴（CLI の ANSI 色と同じ `levelOf` 由来＝🔵 使い切れず損 / 🟢 ちょうど / 🟡 やや使いすぎ / 🔴 枯渇間近、上限なし枠と未報告は ⚪）で状態を伝えられる。全行が同一幅の絵文字＋スペースで始まるので、絵文字が全角でもバーの相対アラインメントは崩れない。
 
-- **`internal/render` が唯一の真実の源**: `Render` は `Options{Color, Emoji}` を取る。`auto`=TTY なら ANSI 色、`plain`=無装飾、`emoji`=信号絵文字（ANSI なし）。色も絵文字も `levelOf`（着地予測ベース）から導出し、pace / reset 整形 / 閾値を TS で再実装する二重管理を解消した。
+- **`internal/render` が唯一の真実の源**: `Render` は `Options{Color, Emoji, Projection}` を取る。`auto`=TTY なら ANSI 色、`plain`=無装飾、`emoji`=信号絵文字（ANSI なし）。色も絵文字も `levelOf`（着地予測ベース）から導出し、pace / reset 整形 / 閾値を TS で再実装する二重管理を解消した。
 - **配布**: `~/dotfiles/raycast/scripts/aiquota.sh` が `aiquota --style emoji` を `exec` するだけ。Raycast に限らず Alfred / SwiftBar / xbar でも同じ。バイナリは PATH（`~/go/bin` 等）で解決。
 - Claude の Keychain 読み取りは `security` を**絶対パス `/usr/bin/security`** で叩く。Raycast 等のランチャーは `/usr/bin` を含まない最小 PATH で子プロセスを起動するため、PATH 依存だと `executable file not found` で落ちていた。
 

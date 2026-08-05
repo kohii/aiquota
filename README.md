@@ -23,6 +23,7 @@ go build -o aiquota ./cmd/aiquota
 ./aiquota                 # all providers, formatted (ANSI color on a TTY)
 ./aiquota --json          # machine-readable JSON
 ./aiquota --style emoji   # plain text with 🟢🟡🔴 signals (for launchers that ignore ANSI)
+./aiquota --proj          # also print the end-of-window projection (proj NN%)
 ./aiquota codex cursor    # selected providers only
 ./aiquota --claude-account <name>   # pin the Claude Keychain account
 ```
@@ -31,28 +32,30 @@ Example output (color is shown here as the leading 🔵🟢🟡🔴; on a TTY it
 
 ```
 codex · plus
-🔵 5h limit           [█░░░░░░░░░│░░░░░]    9.0%  · pace 69%  proj 13%  resets 1h31m
-🟢 Weekly limit       [███░│░░░░░░░░░░░]   17.0%  · pace 19%  resets 2d4h
+🔵 5h limit           [██▏░░░░░░░░░░░░░░│░░░░░░]    9.0%  · pace 69%  resets 1h32m
+🟢 Weekly limit       [████▏│░░░░░░░░░░░░░░░░░░]   17.0%  · pace 20%  resets Jun 24 09:12
 
 cursor · pro
-🟢 Plan (total)       [████░│░░░░░░░░░░]   22.2%  · $9.64 / $43.36  pace 30%  proj 74%  resets Jun 27 14:01
-🔵 Auto models        [█░░░░│░░░░░░░░░░]    4.1%  · pace 30%  proj 14%  resets Jun 27 14:01
-🔴 Named/API models   [█████│█████░░░░░]   82.7%  · pace 30%  proj 276%  resets Jun 27 14:01
+🟢 Plan (total)       [█████▍░│░░░░░░░░░░░░░░░░]   22.2%  · $9.64 / $43.36  pace 30%  resets Jun 27 14:01
+🔵 Auto models        [█░░░░░░│░░░░░░░░░░░░░░░░]    4.1%  · pace 30%  resets Jun 27 14:01
+🔴 Named/API models   [███████│███████████▉░░░░]   82.7%  · pace 30%  resets Jun 27 14:01
 
 copilot · business
-🟢 Premium            [████░░░░░░░░░░░│]   85.0%  · 255 / 300  pace 97%  proj 88%  resets 22h9m
+🟢 Premium            [███████████████████▎░░░│]   80.0%  · 240 / 300  pace 97%  resets 22h9m
 ⚪ Chat (unlimited)
 ⚪ Completions (unlimited)
 ```
 
-These are **flat-rate, use-it-or-lose-it** quotas, so the color answers *"are you on track to get your money's worth before it resets?"* — not just *"how full is the bar?"*. Each meter is colored by its usage **projected to the reset** (`proj NN%` = if you keep this pace, how much you'll have used when the window resets):
+Bars are 24 cells wide and the boundary cell is drawn as a partial block (`▏▎▍▌▋▊▉`), so the fill resolves to ~0.5 percentage points instead of the 6.25 a 16-cell whole-block bar quantized to.
+
+These are **flat-rate, use-it-or-lose-it** quotas, so the color answers *"are you on track to get your money's worth before it resets?"* — not just *"how full is the bar?"*. Each meter is colored by its usage **projected to the reset** (if you keep this pace, how much you'll have used when the window resets; `--proj` prints it as `proj NN%`):
 
 - 🔵 **blue** — tracking to finish well under the cap. You're paying for headroom you won't touch: *use more or lose it.*
 - 🟢 **green** — on track to use most of the window.
 - 🟡 **yellow** — tracking to run out somewhat early.
 - 🔴 **red** — nearly spent right now, or tracking to run out well before reset.
 
-The `│` inside each bar is the **pace marker**: how far the current reset window has elapsed (`pace NN%`). The bigger the gap with the filled bar to its **left**, the more you're leaving on the table (the blue case); filled **past** the marker means you're burning faster than time. Early in a window (before ~20–25% elapsed) the projection is too noisy to trust, so a meter with no clock or a barely-started window falls back to plain "how full" coloring.
+The `│` inside each bar is the **pace marker**: how far the current reset window has elapsed (`pace NN%`), replacing the cell it lands on. The bigger the gap with the filled bar to its **left**, the more you're leaving on the table (the blue case); filled **past** the marker means you're burning faster than time. Early in a window (before ~20–25% elapsed) the projection is too noisy to trust, so a meter with no clock or a barely-started window falls back to plain "how full" coloring.
 
 ## Quick access (Raycast / launchers)
 

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -59,6 +61,42 @@ func TestSelectProviders(t *testing.T) {
 			t.Error("expected error for unknown provider")
 		}
 	})
+}
+
+func TestRenderOptions(t *testing.T) {
+	// A regular file stands in for a redirected stdout (/dev/null would not: it is
+	// a character device, so isTerminal reports true). "auto" must not turn color
+	// on there, and --proj is orthogonal to the style.
+	notTTY, err := os.Create(filepath.Join(t.TempDir(), "out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer notTTY.Close()
+
+	cases := []struct {
+		style string
+		proj  bool
+		want  render.Options
+	}{
+		{"auto", false, render.Options{}},
+		{"plain", false, render.Options{}},
+		{"emoji", false, render.Options{Emoji: true}},
+		{"emoji", true, render.Options{Emoji: true, Projection: true}},
+		{"", true, render.Options{Projection: true}},
+	}
+	for _, c := range cases {
+		got, err := renderOptions(c.style, c.proj, notTTY)
+		if err != nil {
+			t.Errorf("style %q: unexpected error: %v", c.style, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("renderOptions(%q, %v) = %+v, want %+v", c.style, c.proj, got, c.want)
+		}
+	}
+	if _, err := renderOptions("fancy", false, notTTY); err == nil {
+		t.Error("unknown style should be rejected")
+	}
 }
 
 func TestShouldFail(t *testing.T) {

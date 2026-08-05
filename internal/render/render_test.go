@@ -27,10 +27,48 @@ func TestRenderBar_Bounds(t *testing.T) {
 		if filled != c.wantFilled {
 			t.Errorf("pct %.0f: filled=%d want %d (bar=%q)", c.pct, filled, c.wantFilled, bar)
 		}
-		if total := strings.Count(bar, "█") + strings.Count(bar, "░"); total != barWidth {
+		if total := countCells(bar); total != barWidth {
 			t.Errorf("pct %.0f: total cells=%d want %d", c.pct, total, barWidth)
 		}
 	}
+}
+
+// TestRenderBar_SubCell checks the boundary cell carries the remainder as a
+// partial block, so percentages inside one cell's worth stay distinguishable.
+func TestRenderBar_SubCell(t *testing.T) {
+	p := palette{on: false}
+	oneCell := 100.0 / barWidth
+	cases := []struct {
+		pct  float64
+		want string // the fill, i.e. the bar with its empty track trimmed off
+	}{
+		{oneCell, "█"},                       // exactly on a cell edge: no partial
+		{oneCell * 1.5, "█▌"},                // half of the second cell
+		{oneCell * 1.875, "█▉"},              // 7/8 of the second cell
+		{oneCell * 0.375, "▍"},               // still inside the first cell
+		{oneCell * 0.03, ""},                 // under half an eighth: nothing to show
+		{100, strings.Repeat("█", barWidth)}, // full
+	}
+	for _, c := range cases {
+		bar := renderBar(p, levelGood, c.pct, nil)
+		fill := strings.TrimRight(strings.Trim(bar, "[]"), "░")
+		if fill != c.want {
+			t.Errorf("pct %.3f: fill=%q want %q (bar=%q)", c.pct, fill, c.want, bar)
+		}
+		if total := countCells(bar); total != barWidth {
+			t.Errorf("pct %.3f: total cells=%d want %d", c.pct, total, barWidth)
+		}
+	}
+}
+
+// countCells counts a bar's visible cells: full, empty, partial blocks and the
+// pace marker each occupy exactly one.
+func countCells(bar string) int {
+	n := strings.Count(bar, "█") + strings.Count(bar, "│")
+	for _, g := range barGlyphs {
+		n += strings.Count(bar, string(g))
+	}
+	return n
 }
 
 func TestPacePercent(t *testing.T) {
@@ -93,17 +131,16 @@ func TestLevelOf(t *testing.T) {
 
 func TestRenderBar_Marker(t *testing.T) {
 	p := palette{on: false}
-	// 30% used, pace 50%: marker sits at cell 8 (round(0.5*16)).
+	// 30% used, pace 50%: marker sits at the middle cell (round(0.5*barWidth)).
 	bar := renderBar(p, levelGood, 30, ptr(50.0))
 	if !strings.Contains(bar, "│") {
 		t.Fatalf("expected pace marker in bar: %q", bar)
 	}
 	// Marker replaces exactly one cell; total visible cells stay barWidth.
-	cells := strings.Count(bar, "█") + strings.Count(bar, "░") + strings.Count(bar, "│")
-	if cells != barWidth {
+	if cells := countCells(bar); cells != barWidth {
 		t.Errorf("cells = %d, want %d (bar=%q)", cells, barWidth, bar)
 	}
-	// 30% used (≈5 filled) is left of the 50% marker (cell 8): headroom case,
+	// 30% used (≈7 filled) is left of the 50% marker (cell 12): headroom case,
 	// so the marker should fall on an empty cell, i.e. preceded by some ░.
 	idx := strings.Index(bar, "│")
 	if idx <= 0 || !strings.ContainsRune(bar[:idx], '░') {
@@ -227,7 +264,7 @@ func TestRender_EmojiSignals(t *testing.T) {
 func TestRender_LossSignal(t *testing.T) {
 	// 18% used with 75% of the window elapsed (proj ~24%) is tracking to waste
 	// most of the quota: the line should read as a "loss" — blue in color mode,
-	// 🔵 in emoji mode — and surface the projection.
+	// 🔵 in emoji mode.
 	now := time.Now()
 	start := now.Add(-75 * time.Hour)
 	reset := now.Add(25 * time.Hour)
@@ -242,11 +279,18 @@ func TestRender_LossSignal(t *testing.T) {
 	if got := color.String(); !strings.Contains(got, "\x1b[34m") {
 		t.Errorf("under-paced meter should be blue (\\x1b[34m):\n%q", got)
 	}
-	if got := color.String(); !strings.Contains(got, "proj 24%") {
-		t.Errorf("projection should be shown to explain the color:\n%q", got)
+	if got := color.String(); strings.Contains(got, "proj") {
+		t.Errorf("projection is opt-in and must not appear by default:\n%q", got)
 	}
 	if got := color.String(); !strings.Contains(got, "\x1b[1;97m") {
 		t.Errorf("loss bar should use a bright-white pace marker:\n%q", got)
+	}
+
+	// --proj brings back the projection that explains the color.
+	var proj bytes.Buffer
+	Render(&proj, res, Options{Projection: true})
+	if got := proj.String(); !strings.Contains(got, "proj 24%") {
+		t.Errorf("Projection option should surface the projection:\n%q", got)
 	}
 
 	var emoji bytes.Buffer

@@ -23,8 +23,16 @@ type Result struct {
 
 const (
 	labelWidth = 18
-	barWidth   = 16
+	// barWidth is the bar's cell count. With the eighth-block partial fill in
+	// barCells the bar resolves usage to 100/(barWidth*8) ≈ 0.5 percentage points,
+	// so any difference worth noticing moves it — where 16 whole cells quantized
+	// to 6.25 points and could draw two clearly different quotas identically.
+	barWidth = 24
 )
+
+// barGlyphs maps a cell's fill in eighths to a glyph: index 0 is the empty-track
+// cell, 1-7 the partial blocks, and a fully filled cell uses '█'.
+var barGlyphs = [8]rune{'░', '▏', '▎', '▍', '▌', '▋', '▊', '▉'}
 
 // ANSI helpers (no-ops when color is disabled).
 type palette struct{ on bool }
@@ -52,6 +60,10 @@ type Options struct {
 	// fullOutput, which shows monospaced plain text but ignores ANSI. In
 	// practice it is used instead of Color, not alongside it.
 	Emoji bool
+	// Projection appends "proj NN%" — the end-of-window usage the color is based
+	// on. Off by default: it is derivable from the percent and pace already on the
+	// line, and the width is better spent on the bar.
+	Projection bool
 }
 
 const (
@@ -146,7 +158,7 @@ func meterLine(p palette, opt Options, m usage.Meter, now time.Time) string {
 		value = p.colorLevel(l, fmt.Sprintf("%5.1f%%", pct))
 		// Surface the projection that drives the color once the window is far
 		// enough along to trust it, so a cold/blue (or hot/red) line is legible.
-		if usablePace(pace) && *pace >= overrunFloor {
+		if opt.Projection && usablePace(pace) && *pace >= overrunFloor {
 			proj = p.dim(fmt.Sprintf("proj %.0f%%", pct / *pace * 100))
 		}
 	} else {
@@ -180,7 +192,9 @@ func meterLine(p palette, opt Options, m usage.Meter, now time.Time) string {
 	if len(extras) > 0 {
 		line += "  " + p.dim("·") + " " + strings.Join(extras, "  ")
 	}
-	return line
+	// A meter with nothing after the (blank) bar — e.g. an unlimited quota — would
+	// otherwise end in the column padding.
+	return strings.TrimRight(line, " ")
 }
 
 // linePrefix is the per-line lead-in: a signal emoji in Emoji mode (carrying the
@@ -236,24 +250,13 @@ func round1(f float64) float64 { return math.Round(f*10) / 10 }
 // far through the window "now" is: filled left of the marker means usage is
 // behind the clock (headroom), filled past it means burning faster than time.
 func renderBar(p palette, lvl level, pct float64, pace *float64) string {
-	filled := clampCells(pct)
-	cells := make([]rune, barWidth)
-	for i := range cells {
-		if i < filled {
-			cells[i] = '█'
-		} else {
-			cells[i] = '░'
-		}
-	}
+	cells := barCells(pct)
 
 	if pace == nil {
 		return "[" + p.colorLevel(lvl, string(cells)) + "]"
 	}
 
-	pos := clampCells(*pace)
-	if pos >= barWidth {
-		pos = barWidth - 1
-	}
+	pos := paceCell(*pace)
 	// Bold cyan reads well over green/yellow/red bars, but blends into a blue
 	// (loss) bar — switch to bold bright-white there so the marker stays visible.
 	markerCode := "1;36"
@@ -266,16 +269,50 @@ func renderBar(p palette, lvl level, pct float64, pace *float64) string {
 	return "[" + left + marker + right + "]"
 }
 
-// clampCells maps a 0-100 percentage to a bar cell count in [0, barWidth].
-func clampCells(pct float64) int {
-	n := int(math.Round(pct / 100 * barWidth))
+// barCells renders pct as barWidth cells, filling the boundary cell with a
+// partial block so the bar carries sub-cell precision: the fill is quantized to
+// eighths of a cell rather than to whole cells.
+func barCells(pct float64) []rune {
+	eighths := clampEighths(pct)
+	full, rem := eighths/8, eighths%8
+	cells := make([]rune, barWidth)
+	for i := range cells {
+		switch {
+		case i < full:
+			cells[i] = '█'
+		case i == full:
+			cells[i] = barGlyphs[rem] // '░' when the boundary lands on a cell edge
+		default:
+			cells[i] = '░'
+		}
+	}
+	return cells
+}
+
+// clampEighths maps a 0-100 percentage to eighths of a cell in [0, barWidth*8].
+func clampEighths(pct float64) int {
+	n := int(math.Round(pct / 100 * barWidth * 8))
 	if n < 0 {
 		return 0
 	}
-	if n > barWidth {
-		return barWidth
+	if max := barWidth * 8; n > max {
+		return max
 	}
 	return n
+}
+
+// paceCell maps the elapsed percentage to the index of the cell the pace marker
+// occupies. Unlike the fill it is a whole cell — it marks a position, not an
+// amount — and the last cell is its ceiling so the marker stays inside the bar.
+func paceCell(pace float64) int {
+	i := int(math.Round(pace / 100 * barWidth))
+	if i < 0 {
+		return 0
+	}
+	if i > barWidth-1 {
+		return barWidth - 1
+	}
+	return i
 }
 
 // meterPace returns the elapsed fraction (0-100) of the meter's reset window, or

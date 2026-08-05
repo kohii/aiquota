@@ -26,11 +26,13 @@ func main() {
 	var (
 		jsonOut       bool
 		style         string
+		projection    bool
 		claudeAccount string
 		timeout       time.Duration
 	)
 	flag.BoolVar(&jsonOut, "json", false, "JSON で出力する")
 	flag.StringVar(&style, "style", "auto", "出力スタイル: auto（TTYなら色）/ plain / emoji（信号絵文字 🟢🟡🔴）")
+	flag.BoolVar(&projection, "proj", false, "着地予測 (proj NN%) を併記する")
 	flag.StringVar(&claudeAccount, "claude-account", "", "Claude の Keychain account 名（省略時は service のみで照合）")
 	flag.DurationVar(&timeout, "timeout", 30*time.Second, "全体のタイムアウト")
 	flag.Usage = func() {
@@ -55,7 +57,7 @@ func main() {
 
 	// Resolve the output style before fetching so an invalid --style fails fast,
 	// without first reading the Keychain or hitting provider APIs.
-	opt, err := renderOptions(style, os.Stdout)
+	opt, err := renderOptions(style, projection, os.Stdout)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -80,18 +82,20 @@ func main() {
 // renderOptions maps the --style flag to render.Options. "auto" keeps the
 // original behavior (ANSI color only on a TTY); "emoji" trades ANSI for a
 // leading signal glyph so launchers that show plain monospaced text (Raycast's
-// fullOutput) still convey the usage level.
-func renderOptions(style string, out *os.File) (render.Options, error) {
+// fullOutput) still convey the usage level. proj adds the end-of-window
+// projection column, which is off by default to keep lines narrow.
+func renderOptions(style string, projection bool, out *os.File) (render.Options, error) {
+	opt := render.Options{Projection: projection}
 	switch style {
 	case "", "auto":
-		return render.Options{Color: isTerminal(out)}, nil
+		opt.Color = isTerminal(out)
 	case "plain":
-		return render.Options{}, nil
 	case "emoji":
-		return render.Options{Emoji: true}, nil
+		opt.Emoji = true
 	default:
 		return render.Options{}, fmt.Errorf("不明な --style: %q (auto/plain/emoji)", style)
 	}
+	return opt, nil
 }
 
 // selectProviders returns the requested providers in a stable order, or all of
