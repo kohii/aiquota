@@ -23,6 +23,7 @@ func TestParseUsage_RealShape(t *testing.T) {
 		"seven_day_opus": null,
 		"seven_day_sonnet": {"utilization": 3.0, "resets_at": "2026-06-02T13:00:00.726150+00:00"},
 		"seven_day_cowork": null,
+		"nimbus_quill": {"utilization": 0.0, "resets_at": "2026-06-02T13:00:00Z"},
 		"future_window": {"utilization": 42.0, "resets_at": "2026-06-02T13:00:00Z"},
 		"extra_usage": {"is_enabled": true, "monthly_limit": 10000, "used_credits": 32.0, "utilization": 0.32, "currency": "USD"}
 	}`)
@@ -51,6 +52,9 @@ func TestParseUsage_RealShape(t *testing.T) {
 	fut := findMeter(u, "future_window")
 	if fut == nil || fut.Known {
 		t.Errorf("future_window should be unknown meter: %+v", fut)
+	}
+	if findMeter(u, "nimbus_quill") != nil {
+		t.Errorf("nimbus_quill should be omitted")
 	}
 
 	// extra_usage normalized from cents to USD.

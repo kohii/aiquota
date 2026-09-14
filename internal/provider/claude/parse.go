@@ -32,6 +32,13 @@ var knownWindows = []struct {
 	{"seven_day_sonnet", "Weekly (Sonnet)", 7 * 24 * time.Hour},
 }
 
+// ignoredWindows are internal Anthropic codenames for unreleased or otherwise
+// non-user-facing features. They may occasionally be returned as a populated
+// window, but are not useful usage meters.
+var ignoredWindows = map[string]bool{
+	"nimbus_quill": true,
+}
+
 // parseUsage converts an OAuth usage payload into the normalized model.
 func parseUsage(body []byte) (*usage.Usage, error) {
 	var raw map[string]json.RawMessage
@@ -166,7 +173,7 @@ func parseUsage(body []byte) (*usage.Usage, error) {
 	// Pass through any remaining window-shaped keys (sorted for stability).
 	var rest []string
 	for k := range raw {
-		if !seen[k] {
+		if !seen[k] && !ignoredWindows[k] {
 			rest = append(rest, k)
 		}
 	}
