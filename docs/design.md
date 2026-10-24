@@ -7,7 +7,7 @@ JSON 出力（機械可読）と整形表示（CodexBar 相当の見やすさ）
 
 ## 方針
 
-- 言語: **Go 1.26**（単一バイナリ・高速・HTTP/JSON/ファイル読みが得意）。Keychain は `security` CLI 経由で cgo 不要。
+- 言語: **Go 1.27**（単一バイナリ・高速・HTTP/JSON/ファイル読みが得意）。Keychain は `security` CLI 経由で cgo 不要。
 - **強権限を要求しない**: 4 プロバイダすべてローカルの認証情報を読むだけで済む（下表）。Full Disk Access・ブラウザクッキー復号・Chrome Safe Storage は使わない。
 
 | Provider | 認証情報ソース | API | 権限 |
