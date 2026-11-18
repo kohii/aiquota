@@ -58,7 +58,10 @@ type Provider struct {
 	// cliPaths are candidate cursor-agent binaries. New fills in the defaults.
 	cliPaths []string
 	// keychain reads the Cursor CLI access token. Nil runs /usr/bin/security.
+	// A non-nil reader is used on any OS so tests do not depend on darwin.
 	keychain func(ctx context.Context) (string, error)
+	// goos overrides runtime.GOOS in tests. Empty means the host OS.
+	goos string
 }
 
 // session is the one credential value Fetch uses.
@@ -130,8 +133,8 @@ const (
 
 const ideLoggedOut = "ログインされていません（Cursor IDE）"
 
-// resolve picks one session. state.vscdb wins. The keychain runs only when
-// cursor-agent is installed, and only on darwin.
+// resolve picks one session. state.vscdb wins. The real keychain command runs
+// only when cursor-agent is installed, and only on darwin.
 func (p *Provider) resolve(ctx context.Context) (session, error) {
 	sess, state, err := readVSCDB(p.dbPath)
 	if err != nil {
@@ -141,13 +144,32 @@ func (p *Provider) resolve(ctx context.Context) (session, error) {
 		return sess, nil
 	}
 
-	if cursorAgentInstalled(p.cliPaths) && runtime.GOOS == "darwin" {
+	if p.keychainAllowed() {
 		return p.sessionFromKeychain(ctx)
 	}
 	if state == vscdbNoToken {
 		return session{}, &usage.NotConfiguredError{Provider: "cursor", Reason: ideLoggedOut}
 	}
 	return session{}, &usage.NotConfiguredError{Provider: "cursor"}
+}
+
+// keychainAllowed reports whether resolve may read a CLI token. An injected
+// reader is allowed on any OS. The real security command is darwin-only.
+func (p *Provider) keychainAllowed() bool {
+	if !cursorAgentInstalled(p.cliPaths) {
+		return false
+	}
+	if p.keychain != nil {
+		return true
+	}
+	return p.hostOS() == "darwin"
+}
+
+func (p *Provider) hostOS() string {
+	if p.goos != "" {
+		return p.goos
+	}
+	return runtime.GOOS
 }
 
 func (p *Provider) sessionFromKeychain(ctx context.Context) (session, error) {

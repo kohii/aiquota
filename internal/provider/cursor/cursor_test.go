@@ -75,6 +75,41 @@ func TestResolve_EmptyVSCDBUsesKeychain(t *testing.T) {
 	}
 }
 
+func TestResolve_LinuxUsesInjectedKeychain(t *testing.T) {
+	const tok = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyXzEifQ.sig"
+	p := &Provider{
+		dbPath:   filepath.Join(t.TempDir(), "state.vscdb"),
+		cliPaths: []string{writeCursorAgent(t)},
+		goos:     "linux",
+		keychain: func(context.Context) (string, error) {
+			return tok, nil
+		},
+	}
+	sess, err := p.resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.token != tok || sess.source != sourceKeychain {
+		t.Errorf("session = %+v", sess)
+	}
+}
+
+func TestResolve_LinuxWithoutReaderSkipsKeychain(t *testing.T) {
+	p := &Provider{
+		dbPath:   filepath.Join(t.TempDir(), "state.vscdb"),
+		cliPaths: []string{writeCursorAgent(t)},
+		goos:     "linux",
+	}
+	_, err := p.resolve(context.Background())
+	var nc *usage.NotConfiguredError
+	if !errors.As(err, &nc) {
+		t.Fatalf("err = %v, want NotConfiguredError", err)
+	}
+	if nc.Reason != "" {
+		t.Errorf("reason = %q, want empty", nc.Reason)
+	}
+}
+
 func TestResolve_KeychainToken(t *testing.T) {
 	const tok = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyXzEifQ.sig"
 	p := &Provider{
