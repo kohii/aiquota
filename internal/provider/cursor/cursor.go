@@ -118,24 +118,39 @@ func (p *Provider) Fetch(ctx context.Context) (*usage.Usage, error) {
 	return u, nil
 }
 
+// vscdbState is how far the IDE store got. Missing and empty stay distinct
+// so a logged-out IDE still says so when the CLI is not there to try next.
+type vscdbState int
+
+const (
+	vscdbMissing vscdbState = iota
+	vscdbNoToken
+	vscdbOK
+)
+
+const ideLoggedOut = "ログインされていません（Cursor IDE）"
+
 // resolve picks one session. state.vscdb wins. The keychain runs only when
 // cursor-agent is installed, and only on darwin.
 func (p *Provider) resolve(ctx context.Context) (session, error) {
-	sess, ok, err := readVSCDB(p.dbPath)
+	sess, state, err := readVSCDB(p.dbPath)
 	if err != nil {
 		return session{}, err
 	}
-	if ok {
+	if state == vscdbOK {
 		return sess, nil
 	}
 
-	if !cursorAgentInstalled(p.cliPaths) {
-		return session{}, &usage.NotConfiguredError{Provider: "cursor"}
+	if cursorAgentInstalled(p.cliPaths) && runtime.GOOS == "darwin" {
+		return p.sessionFromKeychain(ctx)
 	}
-	if runtime.GOOS != "darwin" {
-		return session{}, &usage.NotConfiguredError{Provider: "cursor"}
+	if state == vscdbNoToken {
+		return session{}, &usage.NotConfiguredError{Provider: "cursor", Reason: ideLoggedOut}
 	}
+	return session{}, &usage.NotConfiguredError{Provider: "cursor"}
+}
 
+func (p *Provider) sessionFromKeychain(ctx context.Context) (session, error) {
 	read := p.keychain
 	if read == nil {
 		read = readCursorKeychain
@@ -165,23 +180,23 @@ func reauthHint(source string) string {
 	return "Cursor IDE で再ログインしてください"
 }
 
-// readVSCDB reads token, email, and membership. ok is false when the file is
-// missing or the token is empty. A SQLite error is returned as-is.
-func readVSCDB(path string) (session, bool, error) {
+// readVSCDB reads token, email, and membership. A missing file is vscdbMissing.
+// A file with no token is vscdbNoToken. A SQLite error is returned as-is.
+func readVSCDB(path string) (session, vscdbState, error) {
 	if path == "" {
-		return session{}, false, nil
+		return session{}, vscdbMissing, nil
 	}
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return session{}, false, nil
+			return session{}, vscdbMissing, nil
 		}
-		return session{}, false, fmt.Errorf("cursor state.vscdb を確認できません: %w", err)
+		return session{}, vscdbMissing, fmt.Errorf("cursor state.vscdb を確認できません: %w", err)
 	}
 
 	dsn := "file:" + path + "?mode=ro&immutable=1"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return session{}, false, fmt.Errorf("cursor state.vscdb を開けません: %w", err)
+		return session{}, vscdbMissing, fmt.Errorf("cursor state.vscdb を開けません: %w", err)
 	}
 	defer db.Close()
 
@@ -189,9 +204,9 @@ func readVSCDB(path string) (session, bool, error) {
 	err = db.QueryRow("SELECT value FROM ItemTable WHERE key = ?", tokenKey).Scan(&token)
 	switch {
 	case errors.Is(err, sql.ErrNoRows) || (err == nil && strings.TrimSpace(token) == ""):
-		return session{}, false, nil
+		return session{}, vscdbNoToken, nil
 	case err != nil:
-		return session{}, false, fmt.Errorf("cursor state.vscdb を読めません: %w", err)
+		return session{}, vscdbMissing, fmt.Errorf("cursor state.vscdb を読めません: %w", err)
 	}
 
 	return session{
@@ -199,7 +214,7 @@ func readVSCDB(path string) (session, bool, error) {
 		email:      itemValue(db, emailKey),
 		membership: itemValue(db, membershipKey),
 		source:     sourceVSCDB,
-	}, true, nil
+	}, vscdbOK, nil
 }
 
 func itemValue(db *sql.DB, key string) string {

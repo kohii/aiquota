@@ -26,8 +26,52 @@ func TestResolve_NoDBNoCLI(t *testing.T) {
 	if !errors.As(err, &nc) {
 		t.Fatalf("err = %v, want NotConfiguredError", err)
 	}
+	if nc.Reason != "" {
+		t.Errorf("reason = %q, want empty", nc.Reason)
+	}
 	if called {
 		t.Fatal("keychain was called")
+	}
+}
+
+func TestResolve_IDELoggedOutNoCLI(t *testing.T) {
+	called := false
+	p := &Provider{
+		dbPath:   writeEmptyVSCDB(t),
+		cliPaths: []string{filepath.Join(t.TempDir(), "cursor-agent")},
+		keychain: func(context.Context) (string, error) {
+			called = true
+			return "", errors.New("keychain should not be called")
+		},
+	}
+	_, err := p.resolve(context.Background())
+	var nc *usage.NotConfiguredError
+	if !errors.As(err, &nc) {
+		t.Fatalf("err = %v, want NotConfiguredError", err)
+	}
+	if nc.Reason != ideLoggedOut {
+		t.Errorf("reason = %q, want %q", nc.Reason, ideLoggedOut)
+	}
+	if called {
+		t.Fatal("keychain was called")
+	}
+}
+
+func TestResolve_EmptyVSCDBUsesKeychain(t *testing.T) {
+	const tok = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyXzEifQ.sig"
+	p := &Provider{
+		dbPath:   writeEmptyVSCDB(t),
+		cliPaths: []string{writeCursorAgent(t)},
+		keychain: func(context.Context) (string, error) {
+			return tok, nil
+		},
+	}
+	sess, err := p.resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.token != tok || sess.source != sourceKeychain {
+		t.Errorf("session = %+v", sess)
 	}
 }
 
@@ -105,6 +149,11 @@ func writeCursorAgent(t *testing.T) string {
 	return path
 }
 
+func writeEmptyVSCDB(t *testing.T) string {
+	t.Helper()
+	return writeVSCDB(t, "")
+}
+
 func writeVSCDB(t *testing.T, token string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "state.vscdb")
@@ -116,9 +165,11 @@ func writeVSCDB(t *testing.T, token string) string {
 		db.Close()
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO ItemTable (key, value) VALUES (?, ?)`, tokenKey, token); err != nil {
-		db.Close()
-		t.Fatal(err)
+	if token != "" {
+		if _, err := db.Exec(`INSERT INTO ItemTable (key, value) VALUES (?, ?)`, tokenKey, token); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)

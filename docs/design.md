@@ -123,7 +123,7 @@ CLI は全プロバイダを並列 `Fetch`、1 つが失敗しても他は表示
 token は次の順で 1 つ決める。
 
 - `state.vscdb`（`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`）を read-only / immutable（`file:...?mode=ro&immutable=1`）で開き、`ItemTable` の `cursorAuth/accessToken` を読む。ファイルが無い、または token が空なら、次を試す。SQLite のエラーはそのまま返し、次には進まない。email は `cursorAuth/cachedEmail`、membership は `cursorAuth/stripeMembershipType`。SQLite は cgo 不要の `modernc.org/sqlite`。
-- それが無いとき、`cursor-agent` があるかを見る。探すのは `~/.local/bin/cursor-agent` と `PATH` 上の `cursor-agent` だけ。`agent` という名前は見ない。シンボリックリンクを解決した先が実行可能なファイルなら導入済み。無ければ未設定で、Keychain は読まない。
+- それが無いとき、`cursor-agent` があるかを見る。探すのは `~/.local/bin/cursor-agent` と `PATH` 上の `cursor-agent` だけ。`agent` という名前は見ない。シンボリックリンクを解決した先が実行可能なファイルなら導入済み。無ければ未設定で、Keychain は読まない。ファイルはあるが token が空で CLI も無いときは「ログインされていません（Cursor IDE）」。
 - 導入済みで darwin のときだけ、`/usr/bin/security find-generic-password -s cursor-access-token -a cursor-user -w`。終了コード 44、または token が空なら未設定（CLI はあるが未ログイン）。それ以外の `security` の失敗はエラー。email は `~/.cursor/cli-config.json` の `authInfo.email` があれば使う。ファイルが無い、読めない、壊れているときは email を空のまま続ける。token と JWT の `sub` は access token から取る。
 - darwin 以外で `state.vscdb` に token が無いときは未設定。`security` は呼ばない。
 
