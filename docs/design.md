@@ -13,7 +13,7 @@ JSON 出力（機械可読）と整形表示（CodexBar 相当の見やすさ）
 | Provider | 認証情報ソース | API | 権限 |
 |---|---|---|---|
 | Codex | `~/.codex/auth.json`（平文 JSON, `tokens.access_token` / `account_id`） | `GET chatgpt.com/backend-api/wham/usage` (Bearer) | ファイル読み |
-| Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`（平文 SQLite, key=`cursorAuth/accessToken`） | `GET cursor.com/api/usage-summary` (+ `/api/auth/me`) | SQLite 読み（復号不要） |
+| Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`（平文 SQLite, key=`cursorAuth/accessToken`）。無ければ `cursor-agent` があるときだけ Keychain `cursor-access-token`（account `cursor-user`） | `GET cursor.com/api/usage-summary` (+ `/api/auth/me`) | SQLite 読み、または Keychain 1 アイテム（`cursor-agent` が無いときは読まない） |
 | Claude | Keychain `Claude Code-credentials` (acct=`kohei`) | `GET api.anthropic.com/api/oauth/usage` (Bearer, `anthropic-beta: oauth-2025-04-20`) | Keychain 1 アイテム（起動時 1 回、以降メモリ保持） |
 | Copilot | `~/.config/github-copilot/apps.json`（平文 JSON, `<host:appId>.oauth_token`、`XDG_CONFIG_HOME` 尊重） | `GET api.github.com/copilot_internal/user`（`Authorization: token`） | ファイル読み |
 
@@ -26,7 +26,7 @@ cmd/aiquota/            CLI エントリ（フラグ、並列フェッチ、出�
 internal/usage/         共通ドメインモデル（正規化スキーマ）+ Provider interface
 internal/provider/codex/   auth.json 読み + wham/usage 取得 + 正規化
 internal/provider/claude/  keychain 読み + oauth/usage 取得 + 正規化
-internal/provider/cursor/  state.vscdb 読み + usage-summary 取得 + 正規化
+internal/provider/cursor/  state.vscdb または Cursor CLI の Keychain + usage-summary 取得 + 正規化
 internal/provider/copilot/ apps.json 読み + copilot_internal/user 取得 + 正規化
 internal/render/        整形表示（バー・残量・リセット時刻）
 ```
@@ -118,11 +118,20 @@ CLI は全プロバイダを並列 `Fetch`、1 つが失敗しても他は表示
 - `limits` 配列（新形式、API 移行中）: `kind` ごとにモデル横断/モデル別の枠を持つ汎用リスト。`session` / `weekly_all` は `five_hour` / `seven_day` と重複するため除外。`weekly_scoped` は `scope.model.display_name`（例: 旧 `seven_day_sonnet` 相当の枠が "Fable" にローテーション）でモデル別 Meter 化し、`scope.model` が無い未知の `kind` は素通し。
 
 ### Cursor ✅ 認証経路 probe 済み（2026-05-31 実機確認）
-**ブラウザクッキー復号・FDA 不要**。`state.vscdb` のローカル token だけで `usage-summary` が取れることを実機確認した（membershipType=pro 等が 200 で返却）。
-- **token 取得**: `state.vscdb` を **read-only / immutable**（`file:...?immutable=1&mode=ro`）で開き `SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken'`（平文 JWT, 383B）。SQLite は cgo 不要の `modernc.org/sqlite`。代替: Keychain `cursor-access-token`/`cursor-user`（WAL ロック完全回避）。
-- **user_id**: 同 JWT の `sub` クレーム（例 `github|<id>`）。`~/.cursor/cli-config.json` の authId からも取れる。
+**ブラウザクッキー復号・FDA 不要**。ローカルの access token だけで `usage-summary` が取れる（membershipType=pro 等が 200）。
+
+token は次の順で 1 つ決める。
+
+- `state.vscdb`（`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`）を read-only / immutable（`file:...?mode=ro&immutable=1`）で開き、`ItemTable` の `cursorAuth/accessToken` を読む。ファイルが無い、または token が空なら、次を試す。SQLite のエラーはそのまま返し、次には進まない。email は `cursorAuth/cachedEmail`、membership は `cursorAuth/stripeMembershipType`。SQLite は cgo 不要の `modernc.org/sqlite`。
+- それが無いとき、`cursor-agent` があるかを見る。探すのは `~/.local/bin/cursor-agent` と `PATH` 上の `cursor-agent` だけ。`agent` という名前は見ない。シンボリックリンクを解決した先が実行可能なファイルなら導入済み。無ければ未設定で、Keychain は読まない。
+- 導入済みで darwin のときだけ、`/usr/bin/security find-generic-password -s cursor-access-token -a cursor-user -w`。終了コード 44、または token が空なら未設定（CLI はあるが未ログイン）。それ以外の `security` の失敗はエラー。email は `~/.cursor/cli-config.json` の `authInfo.email` があれば使う。ファイルが無い、読めない、壊れているときは email を空のまま続ける。token と JWT の `sub` は access token から取る。
+- darwin 以外で `state.vscdb` に token が無いときは未設定。`security` は呼ばない。
+
+`sub` は選んだ token の JWT から取る。plan は usage API の `membershipType` を使う。それが空のときだけ `state.vscdb` の `cursorAuth/stripeMembershipType` を使う。
+
 - **認証ヘッダ（確定）**: `Cookie: WorkosCursorSessionToken=<sub>::<jwt>`（`::` は URL エンコードして `%3A%3A`）。← これだけが 200。Bearer も raw Cookie も 401。
-- `GET cursor.com/api/usage-summary`（+ `/api/auth/me` で email）。
+- `GET cursor.com/api/usage-summary`。
+- 401 の案内はソースによる。`state.vscdb` なら Cursor IDE で再ログイン、Keychain なら `agent login`。
 - 正規化: `individualUsage.plan`（`totalPercentUsed` / `autoPercentUsed` / `apiPercentUsed` / used・limit USD）、`onDemand`、`teamUsage.pooled`、legacy request plan、`billingCycleEnd → billing reset`。応答には `autoModelSelectedDisplayMessage` / `namedModelSelectedDisplayMessage`（"You've used N% ..." 文言）も含まれる。
 
 ### Copilot ✅ 認証経路 probe 済み（2026-05-31 実機確認）
@@ -152,7 +161,7 @@ provider client 共通で最初から持たせる:
 - `aiquota`               → 整形表示（全プロバイダ）。ヘッダは `provider · plan` のみで、`Account`（email/login）は共有端末やスクショでの漏洩を避けるため**伏せる**
 - `aiquota --json`        → JSON 配列（`Account` も含むフル情報）
 - `aiquota <provider>`    → 単一プロバイダ
-- **未設定（未導入・未ログイン）の区別**: 認証情報ソースが存在しない場合は `NotConfiguredError` を返し、`⚠` ではなく淡色の `– not configured` 行で静かに表示。終了コードにも影響しない（ツール未導入の環境はエラーではない）。`--json` では `{"notConfigured": true}`。判定: Codex/Copilot=ファイル不在 or トークン空、Cursor=`state.vscdb` 不在 or token 行なし、Claude=`security` の終了コード 44（errSecItemNotFound）。
+- **未設定（未導入・未ログイン）**: 認証情報ソースが無いときは `NotConfiguredError` を返す。表示は淡色の `– not configured` 行で、`⚠` にはしない。終了コードは変えない（そのツールを入れていないマシンは失敗にしない）。`--json` では `{"notConfigured": true}`。判定: Codex/Copilot=ファイル不在 or トークン空、Cursor=`state.vscdb` に token が無く `cursor-agent` も無い、または `cursor-agent` はあるが Keychain の token が無い（終了コード 44 か空）。`cursor-agent` が無いときは Keychain を読まない。Claude=`security` の終了コード 44（errSecItemNotFound）。
 - 終了コード: **本当のエラー（parse 失敗・401・ネットワーク等）があり、かつ成功が 0 件のとき**のみ非 0。部分成功は 0、未設定のみも 0。
 
 ## テスト
@@ -176,7 +185,7 @@ provider client 共通で最初から持たせる:
 
 1. ~~Cursor accessToken が API session として使えるか~~ → ✅ 解決（`Cookie: WorkosCursorSessionToken=<sub>::<jwt>`）。
 2. **Claude refresh の client_id / endpoint** → refresh を入れる段階で CodexBar から確認（初期版は不要）。
-3. state.vscdb の immutable 読みが Cursor の WAL 更新中に古い値を返す可能性 → 許容（usage は数分粒度）。または Keychain 経路を優先。
+3. state.vscdb の immutable 読みが Cursor の WAL 更新中に古い値を返す可能性 → 許容（usage は数分粒度）。token がある `state.vscdb` を Keychain より先に使う。
 4. レスポンススキーマは API 仕様非公開のため変化しうる → パースは寛容に（欠損は nil 許容、未知枠は素通し）。
 
 ## GUI フェーズ
@@ -189,7 +198,7 @@ provider client 共通で最初から持たせる:
 
 - **`internal/render` が唯一の真実の源**: `Render` は `Options{Color, Emoji, Projection}` を取る。`auto`=TTY なら ANSI 色、`plain`=無装飾、`emoji`=信号絵文字（ANSI なし）。色も絵文字も `levelOf`（着地予測ベース）から導出し、pace / reset 整形 / 閾値を TS で再実装する二重管理を解消した。
 - **配布**: `~/dotfiles/raycast/scripts/aiquota.sh` が `aiquota --style emoji` を `exec` するだけ。Raycast に限らず Alfred / SwiftBar / xbar でも同じ。バイナリは PATH（`~/go/bin` 等）で解決。
-- Claude の Keychain 読み取りは `security` を**絶対パス `/usr/bin/security`** で叩く。Raycast 等のランチャーは `/usr/bin` を含まない最小 PATH で子プロセスを起動するため、PATH 依存だと `executable file not found` で落ちていた。
+- Claude と Cursor CLI の Keychain 読み取りは `security` を**絶対パス `/usr/bin/security`** で叩く。Raycast 等のランチャーは `/usr/bin` を含まない最小 PATH で子プロセスを起動するため、PATH 依存だと `executable file not found` で落ちる。Cursor は `cursor-agent` が無いときはこのコマンドを呼ばない。
 
 ### menubar GUI（未着手）
 
