@@ -1,6 +1,6 @@
 # aiquota
 
-A small CLI that reports **claude / codex / cursor / copilot** subscription usage in (near) real time, using only the credentials each tool already stores locally. It deliberately requires **no extra permissions** — no browser-cookie decryption, no Full Disk Access; the only Keychain read is a single Claude item at startup.
+A small CLI that reports **claude / codex / cursor / copilot** subscription usage in (near) real time, using only the credentials each tool already stores locally. It deliberately requires **no extra permissions**. It does not decrypt browser cookies and does not need Full Disk Access. It reads the macOS Keychain for the Claude Code item, and for the Cursor CLI item `cursor-access-token` only when `cursor-agent` is installed and `state.vscdb` has no access token.
 
 ## How it reads usage
 
@@ -8,10 +8,10 @@ A small CLI that reports **claude / codex / cursor / copilot** subscription usag
 |---|---|---|
 | codex  | `~/.codex/auth.json` (plaintext) | `chatgpt.com/backend-api/wham/usage` |
 | claude | macOS Keychain item `Claude Code-credentials` | `api.anthropic.com/api/oauth/usage` |
-| cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (read-only) | `cursor.com/api/usage-summary` |
+| cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (read-only). If it has no access token and `cursor-agent` is installed, Keychain `cursor-access-token` | `cursor.com/api/usage-summary` |
 | copilot | `~/.config/github-copilot/apps.json` (plaintext) | `api.github.com/copilot_internal/user` |
 
-Tokens are never refreshed or rewritten. On auth failure (401) the tool tells you to re-login with the provider's own CLI/IDE (`codex login` / `claude` / Cursor IDE / VS Code Copilot).
+Tokens are never refreshed or rewritten. On auth failure (401) the tool tells you to re-login with the provider's own CLI/IDE (`codex login` / `claude` / Cursor IDE or `agent login` / VS Code Copilot).
 
 A provider you don't use (tool not installed, or installed but not logged in) is shown as a quiet dim `– not configured` line, never as a `⚠` warning, and does not affect the exit code — so the same command works unchanged across machines with different toolsets. Genuine failures (parse errors, 401, network) still surface as `⚠`. The exit code is non-zero only when a genuine error occurred and nothing succeeded. With `--json`, a not-configured provider is `{"provider": "...", "notConfigured": true}`. The account (email/login) is shown only in `--json`; the formatted output omits it to avoid leaking it in a shared terminal or screenshot.
 
