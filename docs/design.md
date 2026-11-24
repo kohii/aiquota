@@ -112,7 +112,10 @@ CLI は全プロバイダを並列 `Fetch`、1 つが失敗しても他は表示
 - 正規化: `rate_limit.{primary,secondary}_window` を `limit_window_seconds` で分類（≤6h → `5h`、≥6d → `weekly`）。2026 年 mid の API 変更で 5h 窓が廃止され weekly が primary_window に入るようになったため、フィールド名ではなく窓長で判定する。`credits` / `plan_type` は従来通り。
 
 ### Claude
-- `security find-generic-password -s "Claude Code-credentials" [-a <account>] -w` → JSON（`claudeAiOauth.accessToken` 等）。**account は固定しない**（`--claude-account` / 環境変数で指定可、未指定なら service のみで読む。CodexBar も account は optional）。
+- `security find-generic-password -s "Claude Code-credentials" -a <account> -w` → JSON（`claudeAiOauth.accessToken` 等）。
+  - account は Claude Code と同じ名前を使う（`$USER`。空なら OS のユーザー名、`[a-zA-Z0-9._-]` 以外を含めば `claude-code-user`）。`--claude-account` で上書きできる。
+  - service 名だけで照合すると、同じ service 名を持つ別 account の古い項目を拾うことがある。
+  - Claude Code はリフレッシュトークンを拒否されると、`accessToken` / `refreshToken` を空にして項目を残す。空の `accessToken` は再ログインが必要なエラーとして扱う。
 - `GET api.anthropic.com/api/oauth/usage`、`Authorization: Bearer`、`anthropic-beta: oauth-2025-04-20`、`User-Agent: claude-code/<version>`（CodexBar 準拠。UA 無しで弾かれる可能性に備える）。
 - 正規化: `five_hour → 5h`、`seven_day → weekly`、`seven_day_opus → weekly_opus`、`extra_usage → コスト Meter`、`seven_day_sonnet` / `seven_day_routines` / `seven_day_oauth_apps` 等は**未知 Meter として素通し**。
 - `limits` 配列（新形式、API 移行中）: `kind` ごとにモデル横断/モデル別の枠を持つ汎用リスト。`session` / `weekly_all` は `five_hour` / `seven_day` と重複するため除外。`weekly_scoped` は `scope.model.display_name`（例: 旧 `seven_day_sonnet` 相当の枠が "Fable" にローテーション）でモデル別 Meter 化し、`scope.model` が無い未知の `kind` は素通し。

@@ -33,7 +33,7 @@ func main() {
 	flag.BoolVar(&jsonOut, "json", false, "JSON で出力する")
 	flag.StringVar(&style, "style", "auto", "出力スタイル: auto（TTYなら色）/ plain / emoji（信号絵文字 🟢🟡🔴）")
 	flag.BoolVar(&projection, "proj", false, "着地予測 (proj NN%) を併記する")
-	flag.StringVar(&claudeAccount, "claude-account", "", "Claude の Keychain account 名（省略時は service のみで照合）")
+	flag.StringVar(&claudeAccount, "claude-account", "", "Claude の Keychain account 名（省略時は Claude Code と同じく $USER）")
 	flag.DurationVar(&timeout, "timeout", 30*time.Second, "全体のタイムアウト")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: aiquota [flags] [provider...]\n\n")

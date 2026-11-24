@@ -10,7 +10,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"os/user"
+	"regexp"
 	"strings"
 	"time"
 
@@ -32,13 +35,37 @@ const (
 // Provider implements usage.Provider for Claude.
 type Provider struct {
 	http    *httpx.Client
-	account string // optional Keychain account; empty reads by service only
+	account string // Keychain account the credential item is filed under
 }
 
-// New returns a Claude provider. account may be "" to match the Keychain item
-// by service name alone.
+// New returns a Claude provider. account may be "" to use the account Claude
+// Code itself files its credentials under.
 func New(account string) *Provider {
+	if account == "" {
+		username := ""
+		if u, err := user.Current(); err == nil {
+			username = u.Username
+		}
+		account = claudeCodeAccount(os.Getenv("USER"), username)
+	}
 	return &Provider{http: httpx.New(), account: account}
+}
+
+var safeAccount = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// claudeCodeAccount mirrors how Claude Code names the Keychain account it
+// reads and writes. The service name alone is not enough: stale items under
+// other accounts can share it, and `security` would return whichever it finds
+// first.
+func claudeCodeAccount(envUser, username string) string {
+	name := envUser
+	if name == "" {
+		name = username
+	}
+	if !safeAccount.MatchString(name) {
+		return "claude-code-user"
+	}
+	return name
 }
 
 func (p *Provider) Name() string { return "claude" }
@@ -78,12 +105,8 @@ type credential struct {
 
 // readCredential pulls and parses the Keychain credential JSON.
 func readCredential(ctx context.Context, account string) (*credential, error) {
-	args := []string{"find-generic-password", "-s", keychainSvc}
-	if account != "" {
-		args = append(args, "-a", account)
-	}
-	args = append(args, "-w")
-	out, err := exec.CommandContext(ctx, securityBin, args...).Output()
+	out, err := exec.CommandContext(ctx, securityBin,
+		"find-generic-password", "-s", keychainSvc, "-a", account, "-w").Output()
 	if err != nil {
 		// errSecItemNotFound (44): no such Keychain item -> claude not configured.
 		var ee *exec.ExitError

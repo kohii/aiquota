@@ -26,3 +26,17 @@ func TestParseCredential_DeadLoginNeedsReauth(t *testing.T) {
 		t.Fatalf("want ReauthError, got %v", err)
 	}
 }
+
+func TestClaudeCodeAccount(t *testing.T) {
+	cases := []struct{ envUser, username, want string }{
+		{"kohei", "other", "kohei"},
+		{"", "kohei", "kohei"},
+		{"", "", "claude-code-user"},
+		{"has space", "kohei", "claude-code-user"},
+	}
+	for _, c := range cases {
+		if got := claudeCodeAccount(c.envUser, c.username); got != c.want {
+			t.Errorf("claudeCodeAccount(%q, %q) = %q, want %q", c.envUser, c.username, got, c.want)
+		}
+	}
+}
