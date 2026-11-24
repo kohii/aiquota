@@ -92,17 +92,25 @@ func readCredential(ctx context.Context, account string) (*credential, error) {
 		}
 		return nil, fmt.Errorf("claude の Keychain 認証情報を読めません（`claude` でログイン済みですか）: %w", err)
 	}
+	return parseCredential(out)
+}
+
+// parseCredential decodes the Keychain credential JSON.
+func parseCredential(raw []byte) (*credential, error) {
 	var c struct {
 		ClaudeAiOauth struct {
 			AccessToken      string `json:"accessToken"`
 			SubscriptionType string `json:"subscriptionType"`
 		} `json:"claudeAiOauth"`
 	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(string(out))), &c); err != nil {
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(raw))), &c); err != nil {
 		return nil, fmt.Errorf("claude の Keychain 認証情報を解析できません: %w", err)
 	}
 	if c.ClaudeAiOauth.AccessToken == "" {
-		return nil, errors.New("claude の Keychain 認証情報に accessToken がありません")
+		// Claude Code blanks the tokens (keeping the rest of claudeAiOauth) when
+		// the server rejects its refresh token, so an empty token means the
+		// stored login is dead rather than malformed.
+		return nil, &usage.ReauthError{Provider: "claude", Hint: "`claude` で /login し直してください"}
 	}
 	return &credential{
 		AccessToken:      c.ClaudeAiOauth.AccessToken,
