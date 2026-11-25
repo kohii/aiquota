@@ -1,10 +1,19 @@
 // Package cursor fetches Cursor subscription usage.
 //
 // The session token comes from the Cursor IDE store (state.vscdb, key
-// cursorAuth/accessToken), opened read-only and immutable. When that file is
-// missing or the token is empty, and the cursor-agent binary is installed, the
-// token comes from the macOS Keychain item cursor-access-token. The keychain
-// is not read when cursor-agent is not installed.
+// cursorAuth/accessToken), opened read-only and immutable. The stored value is
+// a plaintext JWT, or a cursor-safe-storage:v1: blob from Electron safeStorage.
+// Decrypting the blob reads the macOS Keychain item "Cursor Safe Storage"
+// (account "Cursor Key") and uses that password as the Chromium os_crypt key.
+// The first read can show a Keychain permission dialog. Always Allow adds
+// /usr/bin/security to the item ACL, so later reads through security succeed
+// without a prompt. The password decrypts the auth tokens Cursor stores.
+//
+// When that file is missing or the token is empty, and the cursor-agent binary
+// is installed, the token comes from the macOS Keychain item
+// cursor-access-token. That item is not read when cursor-agent is not
+// installed. A stored IDE token that cannot be decrypted is an error; the
+// cursor-access-token item is not used in its place.
 //
 // The usage endpoint authenticates with a session cookie:
 //
@@ -60,6 +69,10 @@ type Provider struct {
 	// keychain reads the Cursor CLI access token. Nil runs /usr/bin/security.
 	// A non-nil reader is used on any OS so tests do not depend on darwin.
 	keychain func(ctx context.Context) (string, error)
+	// safeStoragePassword reads the Electron safeStorage keychain password for
+	// the given service and account. Nil runs /usr/bin/security on darwin. A
+	// non-nil reader is used on any OS so tests do not depend on darwin.
+	safeStoragePassword func(ctx context.Context, service, account string) (string, error)
 	// goos overrides runtime.GOOS in tests. Empty means the host OS.
 	goos string
 }
@@ -141,6 +154,11 @@ func (p *Provider) resolve(ctx context.Context) (session, error) {
 		return session{}, err
 	}
 	if state == vscdbOK {
+		token, err := p.unwrapStoredToken(ctx, sess.token)
+		if err != nil {
+			return session{}, err
+		}
+		sess.token = token
 		return sess, nil
 	}
 

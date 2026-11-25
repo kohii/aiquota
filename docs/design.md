@@ -8,12 +8,12 @@ JSON 出力（機械可読）と整形表示（CodexBar 相当の見やすさ）
 ## 方針
 
 - 言語: **Go 1.27**（単一バイナリ・高速・HTTP/JSON/ファイル読みが得意）。Keychain は `security` CLI 経由で cgo 不要。
-- **強権限を要求しない**: 4 プロバイダすべてローカルの認証情報を読むだけで済む（下表）。Full Disk Access・ブラウザクッキー復号・Chrome Safe Storage は使わない。
+- **ブラウザの権限は要求しない**: Full Disk Access・ブラウザクッキー復号・Chrome Safe Storage は使わない。各ツールが既に保存している認証情報だけを読む。Cursor IDE の access token が暗号化されているときは、Cursor 自身の Keychain 項目を読む（Cursor の節）。
 
 | Provider | 認証情報ソース | API | 権限 |
 |---|---|---|---|
 | Codex | `~/.codex/auth.json`（平文 JSON, `tokens.access_token` / `account_id`） | `GET chatgpt.com/backend-api/wham/usage` (Bearer) | ファイル読み |
-| Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`（平文 SQLite, key=`cursorAuth/accessToken`）。無ければ `cursor-agent` があるときだけ Keychain `cursor-access-token`（account `cursor-user`） | `GET cursor.com/api/usage-summary` (+ `/api/auth/me`) | SQLite 読み、または Keychain 1 アイテム（`cursor-agent` が無いときは読まない） |
+| Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`（read-only SQLite, key=`cursorAuth/accessToken`。平文 JWT、または `cursor-safe-storage:v1:`）。暗号文は Keychain `Cursor Safe Storage`（account `Cursor Key`）で復号する。token が無いとき、`cursor-agent` がある場合だけ Keychain `cursor-access-token`（account `cursor-user`） | `GET cursor.com/api/usage-summary` (+ `/api/auth/me`) | SQLite 読み。暗号文なら Keychain 1 項目（初回は許可ダイアログ）。token が無いときは `cursor-agent` がある場合だけ別の Keychain 1 項目 |
 | Claude | Keychain `Claude Code-credentials` (acct=`kohei`) | `GET api.anthropic.com/api/oauth/usage` (Bearer, `anthropic-beta: oauth-2025-04-20`) | Keychain 1 アイテム（起動時 1 回、以降メモリ保持） |
 | Copilot | `~/.config/github-copilot/apps.json`（平文 JSON, `<host:appId>.oauth_token`、`XDG_CONFIG_HOME` 尊重） | `GET api.github.com/copilot_internal/user`（`Authorization: token`） | ファイル読み |
 
@@ -121,14 +121,16 @@ CLI は全プロバイダを並列 `Fetch`、1 つが失敗しても他は表示
 - `limits` 配列（新形式、API 移行中）: `kind` ごとにモデル横断/モデル別の枠を持つ汎用リスト。`session` / `weekly_all` は `five_hour` / `seven_day` と重複するため除外。`weekly_scoped` は `scope.model.display_name`（例: 旧 `seven_day_sonnet` 相当の枠が "Fable" にローテーション）でモデル別 Meter 化し、`scope.model` が無い未知の `kind` は素通し。
 
 ### Cursor ✅ 認証経路 probe 済み（2026-05-31 実機確認）
-**ブラウザクッキー復号・FDA 不要**。ローカルの access token だけで `usage-summary` が取れる（membershipType=pro 等が 200）。
+**ブラウザクッキー復号・FDA は不要**。ローカルの access token で `usage-summary` が取れる（membershipType=pro 等が 200）。トークンが safeStorage で包まれているときは、復号のために Keychain 項目 Cursor Safe Storage を読む。
 
 token は次の順で 1 つ決める。
 
-- `state.vscdb`（`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`）を read-only / immutable（`file:...?mode=ro&immutable=1`）で開き、`ItemTable` の `cursorAuth/accessToken` を読む。ファイルが無い、または token が空なら、次を試す。SQLite のエラーはそのまま返し、次には進まない。email は `cursorAuth/cachedEmail`、membership は `cursorAuth/stripeMembershipType`。SQLite は cgo 不要の `modernc.org/sqlite`。
-- それが無いとき、`cursor-agent` があるかを見る。探すのは `~/.local/bin/cursor-agent` と `PATH` 上の `cursor-agent` だけ。`agent` という名前は見ない。シンボリックリンクを解決した先が実行可能なファイルなら導入済み。無ければ未設定で、Keychain は読まない。ファイルはあるが token が空で CLI も無いときは「ログインされていません（Cursor IDE）」。
+- `state.vscdb`（`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`）を read-only / immutable（`file:...?mode=ro&immutable=1`）で開き、`ItemTable` の `cursorAuth/accessToken` を読む。値があればそれを使う。`cursor-safe-storage:v1:` で始まるときは Electron safeStorage の暗号文（macOS では `v10`）なので、`/usr/bin/security find-generic-password -s "Cursor Safe Storage" -a "Cursor Key" -w` のパスワードで復号した平文 JWT を使う。接頭辞が無ければ平文 JWT のまま使う。ファイルが無い、または token が空なら、次を試す。SQLite のエラーはそのまま返し、次には進まない。email は `cursorAuth/cachedEmail`、membership は `cursorAuth/stripeMembershipType`。SQLite は cgo 不要の `modernc.org/sqlite`。
+  - 初回の読み取りで macOS の許可ダイアログが出ることがある。「常に許可」を選ぶと `/usr/bin/security` がその項目を以後確認なしで読める。このパスワードは Cursor が保存した認証トークンを復号する鍵である。
+  - 項目が無い（終了コード 44）、それ以外の `security` の失敗、復号できない、`v10` 以外、はエラーにする。`cursor-access-token` には進まない。darwin 以外では復号しない。
+- token が無いとき、`cursor-agent` があるかを見る。探すのは `~/.local/bin/cursor-agent` と `PATH` 上の `cursor-agent` だけ。`agent` という名前は見ない。シンボリックリンクを解決した先が実行可能なファイルなら導入済み。無ければ未設定で、`cursor-access-token` は読まない。ファイルはあるが token が空で CLI も無いときは「ログインされていません（Cursor IDE）」。
 - 導入済みで darwin のときだけ、`/usr/bin/security find-generic-password -s cursor-access-token -a cursor-user -w`。終了コード 44、または token が空なら未設定（CLI はあるが未ログイン）。それ以外の `security` の失敗はエラー。email は `~/.cursor/cli-config.json` の `authInfo.email` があれば使う。ファイルが無い、読めない、壊れているときは email を空のまま続ける。token と JWT の `sub` は access token から取る。
-- darwin 以外で `state.vscdb` に token が無いときは未設定。`security` は呼ばない。
+- darwin 以外で `state.vscdb` に token が無いときは未設定。`cursor-access-token` は読まない。
 
 `sub` は選んだ token の JWT から取る。plan は usage API の `membershipType` を使う。それが空のときだけ `state.vscdb` の `cursorAuth/stripeMembershipType` を使う。
 
@@ -164,7 +166,7 @@ provider client 共通で最初から持たせる:
 - `aiquota`               → 整形表示（全プロバイダ）。ヘッダは `provider · plan` のみで、`Account`（email/login）は共有端末やスクショでの漏洩を避けるため**伏せる**
 - `aiquota --json`        → JSON 配列（`Account` も含むフル情報）
 - `aiquota <provider>`    → 単一プロバイダ
-- **未設定（未導入・未ログイン）**: 認証情報ソースが無いときは `NotConfiguredError` を返す。表示は淡色の `– not configured` 行で、`⚠` にはしない。終了コードは変えない（そのツールを入れていないマシンは失敗にしない）。`--json` では `{"notConfigured": true}`。判定: Codex/Copilot=ファイル不在 or トークン空、Cursor=`state.vscdb` に token が無く `cursor-agent` も無い、または `cursor-agent` はあるが Keychain の token が無い（終了コード 44 か空）。`cursor-agent` が無いときは Keychain を読まない。Claude=`security` の終了コード 44（errSecItemNotFound）。
+- **未設定（未導入・未ログイン）**: 認証情報ソースが無いときは `NotConfiguredError` を返す。表示は淡色の `– not configured` 行で、`⚠` にはしない。終了コードは変えない（そのツールを入れていないマシンは失敗にしない）。`--json` では `{"notConfigured": true}`。判定: Codex/Copilot=ファイル不在 or トークン空、Cursor=`state.vscdb` に token が無く `cursor-agent` も無い、または `cursor-agent` はあるが Keychain の token が無い（終了コード 44 か空）。`cursor-agent` が無いときは `cursor-access-token` を読まない。暗号化された IDE トークンの復号失敗は未設定ではなくエラー。Claude=`security` の終了コード 44（errSecItemNotFound）。
 - 終了コード: **本当のエラー（parse 失敗・401・ネットワーク等）があり、かつ成功が 0 件のとき**のみ非 0。部分成功は 0、未設定のみも 0。
 
 ## テスト
@@ -176,7 +178,7 @@ provider client 共通で最初から持たせる:
 
 ## 実装の進め方（順序）
 
-0. ~~Cursor 認証 probe~~ ✅ 完了（`WorkosCursorSessionToken=<sub>::<jwt>` で 200 確認）。3 プロバイダすべて低権限で取得可能と確定。
+0. ~~Cursor 認証 probe~~ ✅ 完了（`WorkosCursorSessionToken=<sub>::<jwt>` で 200 確認）。IDE の access token が safeStorage で包まれている場合は Cursor Safe Storage の読み取りが要る。
 1. 正規化スキーマ（`Meter`/`Usage`）と `Provider` interface を確定。
 2. **Codex** から実装（最も簡単・ファイルのみ）→ `--json` と整形表示。
 3. **Claude** 実装（Keychain 読み + OAuth API、401 は再ログイン要を返す）。

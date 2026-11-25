@@ -1,6 +1,6 @@
 # aiquota
 
-A small CLI that reports **claude / codex / cursor / copilot** subscription usage in (near) real time, using only the credentials each tool already stores locally. It deliberately requires **no extra permissions**. It does not decrypt browser cookies and does not need Full Disk Access. It reads the macOS Keychain for the Claude Code item, and for the Cursor CLI item `cursor-access-token` only when `cursor-agent` is installed and `state.vscdb` has no access token.
+A small CLI that reports **claude / codex / cursor / copilot** subscription usage in (near) real time, using only the credentials each tool already stores locally. It does not decrypt browser cookies and does not need Full Disk Access. It reads the macOS Keychain for the Claude Code item, for Cursor's safe-storage password when the IDE access token is encrypted, and for the Cursor CLI item `cursor-access-token` only when `cursor-agent` is installed and `state.vscdb` has no access token. The first read of `Cursor Safe Storage` can show a Keychain permission dialog. Always Allow lets `/usr/bin/security` read that password later without asking. The password decrypts the auth tokens Cursor stores.
 
 ## How it reads usage
 
@@ -8,7 +8,7 @@ A small CLI that reports **claude / codex / cursor / copilot** subscription usag
 |---|---|---|
 | codex  | `~/.codex/auth.json` (plaintext) | `chatgpt.com/backend-api/wham/usage` |
 | claude | macOS Keychain item `Claude Code-credentials` | `api.anthropic.com/api/oauth/usage` |
-| cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (read-only). If it has no access token and `cursor-agent` is installed, Keychain `cursor-access-token` | `cursor.com/api/usage-summary` |
+| cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (read-only). An encrypted access token is unwrapped with Keychain `Cursor Safe Storage` (account `Cursor Key`). If the file has no access token and `cursor-agent` is installed, Keychain `cursor-access-token` | `cursor.com/api/usage-summary` |
 | copilot | `~/.config/github-copilot/apps.json` (plaintext) | `api.github.com/copilot_internal/user` |
 
 Tokens are never refreshed or rewritten. On auth failure (401) the tool tells you to re-login with the provider's own CLI/IDE (`codex login` / `claude` / Cursor IDE or `agent login` / VS Code Copilot).
